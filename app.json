@@ -1,0 +1,35 @@
+{
+  "name": "exorcist-98-crew",
+  "version": "0.1.0",
+  "displayName": "Exorcist 98",
+  "description": "Nightly agent-security patrol: scans workspaces for prompt injection and MCP rug pulls.",
+  "author": "pranavsaji",
+  "agents": ["agents/exorcist-sentry.json"],
+  "skills": ["skills/agent-hygiene"],
+  "ui": {
+    "entry": "dist/index.mjs",
+    "pages": [
+      {
+        "route": "/apps/exorcist-98-crew",
+        "label": "Exorcist 98",
+        "icon": "Shield"
+      }
+    ]
+  },
+  "permissions": {
+    "api": ["/api/crons", "/api/status"],
+    "events": ["notification"]
+  },
+  "crons": [
+    {
+      "name": "nightly-patrol",
+      "cron_expr": "0 2 * * *",
+      "message": "Run the nightly Exorcist patrol on all registered workspaces and report new Critical or High findings.",
+      "agent": "exorcist-sentry"
+    }
+  ],
+  "setup": {
+    "onInstall": "cd ui && npm install && npm run build",
+    "onUpdate": "cd ui && npm install && npm run build"
+  }
+}
