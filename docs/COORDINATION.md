@@ -39,3 +39,30 @@ Not done, for whoever is next:
   notifications.
 - The Sentry agent in chat and a cron firing need a Kiro sign-in.
 - The nightly timer has only run under a fake clock (N-007).
+
+## 2026-11-19, session B, on the main gateway (port 5476), at the user's request
+
+The user asked for both setups to be brought in line, so session B updated
+the main gateway this once.
+
+- `kirocrew app update exorcist-98-crew --source <repo>` at `947822e`. The
+  backend now logs "nightly patrol at 2:00; notifications on". The Sentry
+  agent registered ("Agents registered: 1").
+- **The agent cron had fired at 02:57 and failed:** "The agent
+  exorcist-sentry ... is missing" (N-008). It was still enabled, because Crew
+  applies a manifest's `enabled: false` only when a job is created. Paused it
+  with `kirocrew cron pause ccb80f36` (undo with `kirocrew cron resume ccb80f36`).
+- Patrol through the proxy: Haunted Repo still CRITICAL (17 critical,
+  21 high, 2 medium), nothing new against the existing baseline, so no
+  notification (correct).
+- Notification check: a temporary defanged folder
+  (`~/.x98-crew-test/main/sample`) gave "Exorcist 98: 2 new serious problems
+  found" (priority default, both HIGH). The folder was removed afterwards; the
+  watched list is the Haunted Repo only, as before.
+- Page in Chrome on the signed-in main dashboard: loads, CRITICAL label,
+  finding opens with quote and fix, Run patrol now works, 0 axe violations,
+  no app errors.
+- Crew shows "Update ready". Not applied: that is the user's call.
+
+Both gateways now run the same code (`947822e`). Still unchecked: the Sentry
+agent answering in chat (needs a Kiro sign-in).
