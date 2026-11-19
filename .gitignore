@@ -147,3 +147,8 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Built bundles Crew serves at run time (Crew does not keep node_modules).
+!ui/dist/
+!backend/dist/
+e2e-output/
