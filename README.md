@@ -69,7 +69,7 @@ folder on update.
 ```sh
 npm install
 npm run build      # ui/dist/index.mjs and backend/dist/server.mjs (both committed)
-npm test           # 59 unit and property tests
+npm test           # 83 unit and property tests
 npm run typecheck
 npm run e2e        # Chrome + axe through a stand-in gateway (scripts/preview.mjs)
 ```
@@ -80,7 +80,7 @@ backend with `X-Crew-Proxy`. It is a test harness, not Crew.
 
 ## Status
 
-Built and tested outside Crew: 59 tests pass (including a scan of the Haunted
+Built and tested outside Crew: 83 tests pass (including a scan of the Haunted
 Repo with the real Exorcist 98 CLI), and the page passes a 16-step Chrome run
 with 0 axe violations through the stand-in gateway.
 

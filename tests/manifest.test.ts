@@ -89,3 +89,74 @@ describe('REQ-05 agent and skill', () => {
     }
   });
 });
+describe('M0 REQ-02.5 more broken variants', () => {
+  it.each<[string, (m: Record<string, unknown>) => void, RegExp]>([
+    ['an empty version', (m) => { m['version'] = ''; }, /version/],
+    ['an empty displayName', (m) => { m['displayName'] = ''; }, /displayName/],
+    ['a missing description', (m) => { delete m['description']; }, /description/],
+    ['an absolute backend entry point', (m) => { m['backend'] = { entryPoint: '/usr/bin/node' }; }, /inside the app root/],
+    ['a backend entry point that climbs out', (m) => { m['backend'] = { entryPoint: '../x.mjs' }; }, /inside the app root/],
+    ['an absolute ui.entry', (m) => { m['ui'] = { entry: '/tmp/x.mjs', pages: [] }; }, /inside the app root/],
+    ['a ui.entry that climbs out', (m) => { m['ui'] = { entry: '../x.mjs', pages: [] }; }, /inside the app root/],
+    ['a page without a route', (m) => { m['ui'] = { entry: 'dist/index.mjs', pages: [{ label: 'x' }] }; }, /route/],
+    ['a page entry point that climbs out', (m) => { m['ui'] = { entry: 'dist/index.mjs', pages: [{ route: '/a', label: 'x', entryPoint: '../x.mjs' }] }; }, /inside the app root/],
+    ['a missing ui bundle', (m) => { m['ui'] = { entry: 'dist/nope.mjs', pages: [] }; }, /file not found/],
+    ['a missing skill directory', (m) => { m['skills'] = ['skills/none']; }, /file not found/],
+    ['more than 5 screenshots', (m) => { m['screenshots'] = ['1', '2', '3', '4', '5', '6'].map((n) => `${n}.png`); }, /screenshots/],
+  ])('rejects %s', (_name, mutate, pattern) => {
+    const m = manifest();
+    mutate(m);
+    expect(validateManifest(m, ROOT).join('\n')).toMatch(pattern);
+  });
+});
+describe('PBT-M0 manifest properties', () => {
+  const runs = { numRuns: 200 };
+  const base = manifest();
+  const word = fc.stringMatching(/^[a-z0-9]{1,6}$/);
+  const kebab = fc.array(word, { minLength: 1, maxLength: 4 }).map((w) => w.join('-'));
+  const isKebab = (s: string): boolean => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s);
+  const isSemver = (s: string): boolean => /^\d+\.\d+\.\d+$/.test(s);
+  const withCron = (cron: Record<string, unknown>): Record<string, unknown> => ({ ...base, crons: [cron] });
+
+  it('PBT-M0-01: key order and unknown top-level keys do not change validity, and unknown keys survive parsing', () => {
+    const keys = Object.keys(base);
+    const extra = fc.dictionary(fc.stringMatching(/^x[A-Za-z]{1,8}$/), fc.jsonValue(), { maxKeys: 4 });
+    fc.assert(fc.property(fc.shuffledSubarray(keys, { minLength: keys.length, maxLength: keys.length }), extra, (order, unknown) => {
+      const shuffled: Record<string, unknown> = {};
+      for (const k of order) shuffled[k] = base[k];
+      const m = { ...unknown, ...shuffled };
+      expect(validateManifest(m, ROOT)).toEqual([]);
+      const parsed = ManifestSchema.parse(m) as Record<string, unknown>;
+      for (const k of Object.keys(unknown)) expect(parsed[k]).toEqual(unknown[k]);
+    }), runs);
+  });
+
+  it('PBT-M0-02: a cron with exactly one of every / cron_expr is valid; both or neither is not', () => {
+    const every = fc.integer({ min: 1, max: 100000 });
+    const expr = fc.constantFrom('0 2 * * *', '*/5 * * * *', '0 9 * * 1-5');
+    const one = fc.oneof(every.map((e) => ({ every: e })), expr.map((c) => ({ cron_expr: c })));
+    const both = fc.tuple(every, expr).map(([e, c]) => ({ every: e, cron_expr: c }));
+    const msg = fc.string({ minLength: 1, maxLength: 20 });
+    fc.assert(fc.property(word, msg, one, (name, message, when) => {
+      expect(validateManifest(withCron({ name, message, ...when }), ROOT)).toEqual([]);
+    }), runs);
+    fc.assert(fc.property(word, msg, both, (name, message, when) => {
+      expect(validateManifest(withCron({ name, message, ...when }), ROOT).join()).toMatch(/exactly one/);
+    }), runs);
+    fc.assert(fc.property(word, msg, (name, message) => {
+      expect(validateManifest(withCron({ name, message }), ROOT).join()).toMatch(/exactly one/);
+    }), runs);
+  });
+
+  it('PBT-M0-03: kebab-case names and X.Y.Z versions validate; anything else does not', () => {
+    fc.assert(fc.property(kebab, fc.tuple(fc.nat(999), fc.nat(999), fc.nat(999)), (name, v) => {
+      expect(validateManifest({ ...base, name, version: v.join('.') }, ROOT)).toEqual([]);
+    }), runs);
+    fc.assert(fc.property(fc.string({ maxLength: 20 }).filter((s) => !isKebab(s)), (name) => {
+      expect(ManifestSchema.safeParse({ ...base, name }).success).toBe(false);
+    }), runs);
+    fc.assert(fc.property(fc.string({ maxLength: 20 }).filter((s) => !isSemver(s)), (version) => {
+      expect(ManifestSchema.safeParse({ ...base, version }).success).toBe(false);
+    }), runs);
+  });
+});

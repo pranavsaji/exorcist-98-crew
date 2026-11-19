@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Validate app.json on save",
+      "trigger": "PostFileSave",
+      "description": "PLAN.md section 6: when app.json changes, validate it against the manifest rules (tests/manifest.test.ts).",
+      "matcher": "(^|/)app\\.json$",
+      "action": {
+        "type": "command",
+        "command": "npx vitest run tests/manifest.test.ts 1>&2",
+        "timeout": 60
+      }
+    }
+  ]
+}

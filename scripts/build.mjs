@@ -2,6 +2,9 @@
 // runtime imports, so Crew can serve them without node_modules.
 import { build } from 'esbuild';
 
+// The host supplies these through its import map (Crew docs, SDK reference);
+// they must never be bundled into the page.
+const hostProvided = ['react', 'react-dom', 'react/jsx-runtime', 'lucide-react', '@kirocrew/app-sdk', '@kirocrew/app-sdk/*'];
 const common = { bundle: true, format: 'esm', target: 'es2022', legalComments: 'none', logLevel: 'info' };
 
 await build({
@@ -9,6 +12,7 @@ await build({
   entryPoints: ['ui/src/index.ts'],
   outfile: 'ui/dist/index.mjs',
   platform: 'browser',
+  external: hostProvided,
   minify: true,
 });
 

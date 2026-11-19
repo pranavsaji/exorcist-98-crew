@@ -36,6 +36,7 @@ const PageSchema = z
     route: nonEmpty,
     label: nonEmpty,
     icon: nonEmpty.optional(),
+    iconUrl: nonEmpty.optional(),
     entryPoint: appPath.optional(),
     mountFunction: nonEmpty.optional(),
   })
@@ -49,13 +50,20 @@ export const ManifestSchema = z
     description: nonEmpty,
     author: nonEmpty.optional(),
     license: nonEmpty.optional(),
+    minKiroCrewVersion: nonEmpty.optional(),
+    iconPath: nonEmpty.optional(),
+    screenshots: z.array(nonEmpty).max(5).optional(),
     tags: z.array(nonEmpty).optional(),
     highlights: z.array(nonEmpty).max(10).optional(),
     agents: z.array(appPath).optional(),
     skills: z.array(appPath).optional(),
     sops: z.array(appPath).optional(),
     ui: z
-      .object({ entry: appPath.optional(), pages: z.array(PageSchema).optional() })
+      .object({
+        entry: appPath.optional(),
+        pages: z.array(PageSchema).optional(),
+        sidebar: z.object({ section: nonEmpty.optional(), order: z.number().optional() }).passthrough().optional(),
+      })
       .passthrough()
       .optional(),
     backend: z
@@ -64,6 +72,7 @@ export const ManifestSchema = z
         type: z.enum(['python', 'asgi', 'node', 'exec', '']).optional(),
         port: z.union([z.literal('auto'), z.number().int().positive()]).optional(),
         healthCheck: nonEmpty.optional(),
+        routes: nonEmpty.optional(),
       })
       .passthrough()
       .optional(),
@@ -72,6 +81,9 @@ export const ManifestSchema = z
       .object({
         api: z.array(nonEmpty).optional(),
         events: z.array(nonEmpty).optional(),
+        mcpTools: z.array(nonEmpty).optional(),
+        memory: z.enum(['', 'app-scoped', 'shared']).optional(),
+        jobs: z.boolean().optional(),
         storage: z.boolean().optional(),
         cron: z.boolean().optional(),
         network: z.boolean().optional(),
