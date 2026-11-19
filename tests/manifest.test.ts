@@ -32,9 +32,9 @@ describe('REQ-01 app.json', () => {
     expect(errors.join('\n')).toMatch(pattern);
   });
 
-  it('asks only for the permission it uses: its own backend', () => {
+  it('asks only for the permission it uses: its cron (the page reaches its own backend through the proxy without an api grant)', () => {
     const m = ManifestSchema.parse(manifest());
-    expect(m.permissions).toEqual({ api: ['/apps/exorcist-98-crew/api'] });
+    expect(m.permissions).toEqual({ cron: true });
   });
 
   it('runs the nightly patrol at 02:00 with the Sentry agent', () => {
@@ -102,6 +102,7 @@ describe('M0 REQ-02.5 more broken variants', () => {
     ['a page entry point that climbs out', (m) => { m['ui'] = { entry: 'dist/index.mjs', pages: [{ route: '/a', label: 'x', entryPoint: '../x.mjs' }] }; }, /inside the app root/],
     ['a missing ui bundle', (m) => { m['ui'] = { entry: 'dist/nope.mjs', pages: [] }; }, /file not found/],
     ['a missing skill directory', (m) => { m['skills'] = ['skills/none']; }, /file not found/],
+    ['crons without permissions.cron (Crew 0.12.2 refuses the install)', (m) => { m['permissions'] = { storage: true }; }, /permissions\.cron/],
     ['more than 5 screenshots', (m) => { m['screenshots'] = ['1', '2', '3', '4', '5', '6'].map((n) => `${n}.png`); }, /screenshots/],
   ])('rejects %s', (_name, mutate, pattern) => {
     const m = manifest();

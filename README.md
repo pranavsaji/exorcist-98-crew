@@ -60,16 +60,17 @@ The scanner is never chosen through the app's HTTP API.
 
 ### Where data lives
 
-`~/.exorcist-98-crew/state.json` (or `EXORCIST_CREW_DATA`): the folder list and
-the last patrol's findings. Outside the app folder, because Crew replaces that
-folder on update.
+`state.json` in the app's `data/` folder under Crew's home
+(`$KIROCREW_HOME/apps/exorcist-98-crew/data`, which Crew keeps across updates),
+or `~/.exorcist-98-crew/` when Crew's folder is not found, or the folder named
+by `EXORCIST_CREW_DATA`. It holds the folder list and the last patrol's findings.
 
 ## Develop
 
 ```sh
 npm install
 npm run build      # ui/dist/index.mjs and backend/dist/server.mjs (both committed)
-npm test           # 83 unit and property tests
+npm test           # 90 unit and property tests
 npm run typecheck
 npm run e2e        # Chrome + axe through a stand-in gateway (scripts/preview.mjs)
 ```
@@ -80,12 +81,14 @@ backend with `X-Crew-Proxy`. It is a test harness, not Crew.
 
 ## Status
 
-Built and tested outside Crew: 83 tests pass (including a scan of the Haunted
+Built and tested outside Crew: 90 tests pass (including a scan of the Haunted
 Repo with the real Exorcist 98 CLI), and the page passes a 16-step Chrome run
 with 0 axe violations through the stand-in gateway.
 
-**Not yet run inside Kiro Crew.** Crew was not installed on the development
-machine. See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) for
+**Run inside Kiro Crew 0.12.2:** it installs, enables, registers the agent,
+skill and cron, the page works in a signed-in dashboard, and a patrol through the
+gateway proxy works. The agent in chat and the cron firing are not checked yet
+(they need a Kiro sign-in). See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) for
 every assumption about Crew that still has to be checked.
 
 ## License

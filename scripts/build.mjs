@@ -16,6 +16,17 @@ await build({
   minify: true,
 });
 
+// What Crew loads: a React default export (see ui/src/crew.ts). Only `react`
+// is imported, from the host's import map.
+await build({
+  ...common,
+  entryPoints: ['ui/src/crew.ts'],
+  outfile: 'ui/dist/crew.mjs',
+  platform: 'browser',
+  external: hostProvided,
+  minify: true,
+});
+
 await build({
   ...common,
   entryPoints: ['backend/src/main.ts'],

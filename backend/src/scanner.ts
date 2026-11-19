@@ -22,14 +22,16 @@ const ConfigSchema = z.object({ cliPath: z.string().min(1).optional() }).passthr
  * The scanner command comes from `EXORCIST_CLI`, then `cliPath` in the config
  * file, then the published npm package. It is never taken from a request.
  */
-export function resolveScannerCommand(env: NodeJS.ProcessEnv, configFile: string): ScannerCommand {
+export function resolveScannerCommand(env: NodeJS.ProcessEnv, configFiles: string | readonly string[]): ScannerCommand {
   let cliPath = env['EXORCIST_CLI'];
-  if (!cliPath && existsSync(configFile)) {
+  // The first config file that names a cliPath wins.
+  for (const configFile of typeof configFiles === 'string' ? [configFiles] : configFiles) {
+    if (cliPath || !existsSync(configFile)) continue;
     try {
       const parsed = ConfigSchema.safeParse(JSON.parse(readFileSync(configFile, 'utf8')));
       if (parsed.success) cliPath = parsed.data.cliPath;
     } catch {
-      // A broken config file falls back to the default package.
+      // A broken config file is skipped.
     }
   }
   if (cliPath) return { file: process.execPath, args: [cliPath] };

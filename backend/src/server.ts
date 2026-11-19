@@ -122,8 +122,13 @@ export function createHandler(deps: Deps): (req: IncomingMessage, res: ServerRes
 
   async function handle(req: IncomingMessage, res: ServerResponse, body: string): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost');
+    const route = routeOf(url.pathname);
+    const method = req.method ?? 'GET';
+    // Crew's health probe is unsigned, so /health is open. It reveals nothing.
+    if (route === '/health' && method === 'GET') return send(res, 200, { ok: true });
     if (deps.secret !== null) {
-      const header = req.headers['x-crew-proxy'];
+      // Crew 0.12.2 sends X-KiroCrew-Proxy (the docs say X-Crew-Proxy); accept both.
+      const header = req.headers['x-kirocrew-proxy'] ?? req.headers['x-crew-proxy'];
       const ok = verifyProxy({
         secret: deps.secret, header: Array.isArray(header) ? header[0] : header,
         method: req.method ?? 'GET', pathAndQuery: `${url.pathname}${url.search}`, body,
@@ -131,10 +136,6 @@ export function createHandler(deps: Deps): (req: IncomingMessage, res: ServerRes
       });
       if (!ok) return send(res, 401, { error: 'This request was not signed by the Crew gateway.' });
     }
-    const route = routeOf(url.pathname);
-    const method = req.method ?? 'GET';
-
-    if (route === '/health' && method === 'GET') return send(res, 200, { ok: true });
     if (route === '/status' && method === 'GET') return send(res, 200, status());
 
     if (route === '/folders' && method === 'POST') {

@@ -27,6 +27,19 @@ describe('scanner command', () => {
   });
 });
 
+describe('scanner config in two places (Crew app data folder, then ~/.exorcist-98-crew)', () => {
+  it('uses the first file that names a cliPath, skipping missing and broken ones', () => {
+    const a = join(tmp(), 'config.json');
+    const b = join(tmp(), 'config.json');
+    writeFileSync(b, JSON.stringify({ cliPath: '/user/cli.mjs' }));
+    expect(resolveScannerCommand({}, [a, b]).args).toEqual(['/user/cli.mjs']);
+    writeFileSync(a, '{broken');
+    expect(resolveScannerCommand({}, [a, b]).args).toEqual(['/user/cli.mjs']);
+    writeFileSync(a, JSON.stringify({ cliPath: '/crew/cli.mjs' }));
+    expect(resolveScannerCommand({}, [a, b]).args).toEqual(['/crew/cli.mjs']);
+  });
+});
+
 describe('REQ-02.2-3 running the scanner', () => {
   it('passes a fixed argument list and parses the JSON report', async () => {
     const out = report([{ ruleId: 'EX-001', title: 't', severity: 'critical', file: 'a.md', line: 1, col: 2, span: 's', fix: 'f' }], 5);

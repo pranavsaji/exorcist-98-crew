@@ -6,7 +6,7 @@ var __export = (target, all) => {
 };
 
 // backend/src/main.ts
-import { existsSync as existsSync2, readFileSync as readFileSync3 } from "node:fs";
+import { existsSync as existsSync3 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { join as join3 } from "node:path";
 
@@ -4272,8 +4272,11 @@ function createHandler(deps) {
   }
   async function handle(req, res, body) {
     const url = new URL(req.url ?? "/", "http://localhost");
+    const route = routeOf(url.pathname);
+    const method = req.method ?? "GET";
+    if (route === "/health" && method === "GET") return send(res, 200, { ok: true });
     if (deps.secret !== null) {
-      const header = req.headers["x-crew-proxy"];
+      const header = req.headers["x-kirocrew-proxy"] ?? req.headers["x-crew-proxy"];
       const ok = verifyProxy({
         secret: deps.secret,
         header: Array.isArray(header) ? header[0] : header,
@@ -4284,9 +4287,6 @@ function createHandler(deps) {
       });
       if (!ok) return send(res, 401, { error: "This request was not signed by the Crew gateway." });
     }
-    const route = routeOf(url.pathname);
-    const method = req.method ?? "GET";
-    if (route === "/health" && method === "GET") return send(res, 200, { ok: true });
     if (route === "/status" && method === "GET") return send(res, 200, status());
     if (route === "/folders" && method === "POST") {
       let json;
@@ -4361,15 +4361,14 @@ function createServer(deps) {
 // backend/src/scanner.ts
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync as readFileSync2 } from "node:fs";
-import { homedir } from "node:os";
-import { join as join2 } from "node:path";
 var SCAN_TIMEOUT_MS = 12e4;
 var SCAN_MAX_OUTPUT = 20 * 1024 * 1024;
 var DEFAULT_PACKAGE = "@exorcist-98/cli@0.1.0";
 var ConfigSchema = external_exports.object({ cliPath: external_exports.string().min(1).optional() }).passthrough();
-function resolveScannerCommand(env2, configFile) {
+function resolveScannerCommand(env2, configFiles) {
   let cliPath = env2["EXORCIST_CLI"];
-  if (!cliPath && existsSync(configFile)) {
+  for (const configFile of typeof configFiles === "string" ? [configFiles] : configFiles) {
+    if (cliPath || !existsSync(configFile)) continue;
     try {
       const parsed = ConfigSchema.safeParse(JSON.parse(readFileSync2(configFile, "utf8")));
       if (parsed.success) cliPath = parsed.data.cliPath;
@@ -4379,7 +4378,6 @@ function resolveScannerCommand(env2, configFile) {
   if (cliPath) return { file: process.execPath, args: [cliPath] };
   return { file: process.platform === "win32" ? "npx.cmd" : "npx", args: ["-y", DEFAULT_PACKAGE] };
 }
-var defaultConfigFile = (env2) => join2(env2["EXORCIST_CREW_DATA"] ?? join2(homedir(), ".exorcist-98-crew"), "config.json");
 function cliScanner(cmd, timeoutMs = SCAN_TIMEOUT_MS) {
   return (folder) => new Promise((resolvePromise) => {
     execFile(
@@ -4401,20 +4399,29 @@ function firstLine(s) {
   return s.split("\n").map((l) => l.trim()).find((l) => l.length > 0)?.slice(0, 300) ?? "";
 }
 
-// backend/src/main.ts
-function readSecret(env2) {
-  const fromEnv = env2["EXORCIST_CREW_SECRET"];
-  if (fromEnv) return fromEnv;
-  const file = join3(homedir2(), ".kiro", "crew", "apps", APP_NAME, ".app_secret");
+// backend/src/secret.ts
+import { existsSync as existsSync2, readFileSync as readFileSync3 } from "node:fs";
+import { homedir } from "node:os";
+import { join as join2 } from "node:path";
+function readSecret(env2, appName, home = homedir()) {
+  for (const key of ["EXORCIST_CREW_SECRET", "KIROCREW_PROXY_SECRET"]) {
+    const v = env2[key]?.trim();
+    if (v) return v;
+  }
+  const crewHome = env2["KIROCREW_HOME"] || join2(home, ".kiro", "crew");
+  const file = join2(crewHome, "apps", appName, ".app_secret");
   if (!existsSync2(file)) return null;
   const s = readFileSync3(file, "utf8").trim();
   return s.length > 0 ? s : null;
 }
+
+// backend/src/main.ts
 var env = process.env;
-var dataDir = env["EXORCIST_CREW_DATA"] ?? join3(homedir2(), ".exorcist-98-crew");
+var crewData = env["KIROCREW_HOME"] ? join3(env["KIROCREW_HOME"], "apps", APP_NAME, "data") : null;
+var dataDir = env["EXORCIST_CREW_DATA"] ?? (crewData && existsSync3(crewData) ? crewData : join3(homedir2(), ".exorcist-98-crew"));
 var port = Number(env["PORT"] ?? 4598);
-var secret = readSecret(env);
-var command = resolveScannerCommand(env, defaultConfigFile(env));
+var secret = readSecret(env, APP_NAME);
+var command = resolveScannerCommand(env, [join3(dataDir, "config.json"), join3(homedir2(), ".exorcist-98-crew", "config.json")]);
 var server = createServer({ store: fileStore(dataDir), scanner: cliScanner(command), secret });
 server.listen(port, "127.0.0.1", () => {
   process.stderr.write(

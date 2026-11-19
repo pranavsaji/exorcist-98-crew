@@ -91,7 +91,13 @@ export const ManifestSchema = z
       .passthrough()
       .optional(),
   })
-  .passthrough();
+  .passthrough()
+  // Found by installing in Crew 0.12.2 (not in the Manifest reference): the
+  // gateway refuses an app that declares crons without permissions.cron.
+  .refine((m) => !m.crons?.length || m.permissions?.cron === true, {
+    path: ['permissions', 'cron'],
+    message: 'crons is declared but permissions.cron is not true (Crew refuses the install)',
+  });
 export type Manifest = z.infer<typeof ManifestSchema>;
 
 /** Every path the manifest names. `ui.entry` and page entry points live under `ui/`. */

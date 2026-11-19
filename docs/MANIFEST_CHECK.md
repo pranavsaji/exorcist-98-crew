@@ -5,9 +5,8 @@ Every field in `app.json` compared with the Crew Manifest reference
 Publishing guide (https://kiro.dev/docs/crew/apps/publishing/).
 
 **Scope of this check:** it compares `app.json` with the documentation and
-runs the install-time rules in `shared/manifest.ts`. It does **not** show that
-Crew accepts the file. That needs `kirocrew doctor` or
-`GET /api/apps/exorcist-98-crew/manifest` on a real gateway (REQ-03, not done).
+runs the install-time rules in `shared/manifest.ts`. Crew 0.12.2 also accepted
+the file on install and enable (2026-11-18), after the `permissions.cron` fix.
 
 | Field | Value | Documented | Result |
 |-------|-------|------------|--------|
@@ -26,10 +25,11 @@ Crew accepts the file. That needs `kirocrew doctor` or
 | `backend.port` | `auto` | Number or `"auto"` | OK. How the port reaches the process is not documented (C-003). |
 | `backend.healthCheck` | `/health` | Default `/health` | OK (equals the default; kept to be explicit) |
 | `backend.routes` | not set | Optional base route path | Left out: the docs do not say what it changes, and the proxy path is documented as `/apps/{name}/api/*`. |
-| `ui.entry` | `dist/index.mjs` | "relative to app root" in the reference; the examples and the publishing layout put the file at `ui/dist/index.mjs` | OK, consistent with the examples (C-006) |
+| `ui.entry` | `dist/crew.mjs` | Served from `ui/dist/`. The host renders the module's **default export as a React component** (C-002). | OK, seen working in Crew 0.12.2 |
 | `ui.pages[0].route` / `label` | `/apps/exorcist-98-crew` / `Exorcist 98` | Required | OK |
 | `ui.pages[0].icon` | `Shield` | Lucide icon name; `Shield` appears in the docs | OK |
-| `permissions.api` | `["/apps/exorcist-98-crew/api"]` | "Allowed API path prefixes (enforced today)"; examples are gateway paths like `/api/crons` | **Uncertain.** The page calls its own backend with plain `fetch`, not `useAppApi`, so this entry may be unnecessary. Kept until it can be tested in Crew: remove it and see whether the page still loads. |
+| `permissions.api` | removed | Gateway API prefixes | Removed after testing in Crew 0.12.2: the page reaches its own backend through the proxy without it (C-016). |
+| `permissions.cron` | `true` | Can create cron jobs | **Required by Crew 0.12.2** when `crons` is declared; the reference does not say so (N-001). |
 | `crons[0]` | `nightly-patrol`, `cron_expr`, `message`, `agent` | `name`, exactly one of `every` or `cron_expr`, `message`, optional `agent` | OK |
 | `setup` | not set | Optional | **Left out on purpose.** Crew runs `npm install && npm run build` itself after cloning (Publishing guide), the bundles are committed, and the backend has no runtime dependencies, so no `onInstall` step is needed. |
 | `minKiroCrewVersion` | not set | Optional | Left out: the lowest version that works is unknown. |

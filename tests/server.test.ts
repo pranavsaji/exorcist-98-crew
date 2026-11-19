@@ -151,9 +151,14 @@ describe('REQ-02.7 signed requests', () => {
   it('requires a valid X-Crew-Proxy signature when a secret is set', async () => {
     const { call } = await start(async () => ({ ok: true, value: { filesScanned: 0, findings: [] } }), 'EXAMPLE_TOKEN_DO_NOT_USE');
     expect((await call('GET', '/status')).status).toBe(401);
+    // Crew probes /health without a signature; it must answer and reveal nothing.
+    expect((await call('GET', '/health')).json).toEqual({ ok: true });
+    expect((await call('POST', '/patrol')).status).toBe(401);
     const ts = String(Math.floor(Date.now() / 1000));
     const good = signProxy('EXAMPLE_TOKEN_DO_NOT_USE', ts, 'GET', '/apps/exorcist-98-crew/api/status', '');
     expect((await call('GET', '/apps/exorcist-98-crew/api/status', undefined, { 'x-crew-proxy': good })).status).toBe(200);
+    // The header name Crew 0.12.2 really sends (found by installing the app in Crew).
+    expect((await call('GET', '/apps/exorcist-98-crew/api/status', undefined, { 'x-kirocrew-proxy': good })).status).toBe(200);
     const wrong = signProxy('other', ts, 'GET', '/status', '');
     expect((await call('GET', '/status', undefined, { 'x-crew-proxy': wrong })).status).toBe(401);
     const body = { path: folder() };

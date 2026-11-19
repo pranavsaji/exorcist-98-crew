@@ -1,24 +1,21 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { APP_NAME, createServer } from './server.js';
-import { cliScanner, defaultConfigFile, resolveScannerCommand } from './scanner.js';
+import { cliScanner, resolveScannerCommand } from './scanner.js';
 import { fileStore } from './store.js';
+import { readSecret } from './secret.js';
 
-function readSecret(env: NodeJS.ProcessEnv): string | null {
-  const fromEnv = env['EXORCIST_CREW_SECRET'];
-  if (fromEnv) return fromEnv;
-  const file = join(homedir(), '.kiro', 'crew', 'apps', APP_NAME, '.app_secret');
-  if (!existsSync(file)) return null;
-  const s = readFileSync(file, 'utf8').trim();
-  return s.length > 0 ? s : null;
-}
 
 const env = process.env;
-const dataDir = env['EXORCIST_CREW_DATA'] ?? join(homedir(), '.exorcist-98-crew');
+// Crew 0.12.2 creates a private data/ folder in each app's directory and sets
+// KIROCREW_HOME; use it so two gateways never share one folder list.
+const crewData = env['KIROCREW_HOME'] ? join(env['KIROCREW_HOME'], 'apps', APP_NAME, 'data') : null;
+const dataDir = env['EXORCIST_CREW_DATA'] ?? (crewData && existsSync(crewData) ? crewData : join(homedir(), '.exorcist-98-crew'));
 const port = Number(env['PORT'] ?? 4598);
-const secret = readSecret(env);
-const command = resolveScannerCommand(env, defaultConfigFile(env));
+const secret = readSecret(env, APP_NAME);
+// Crew's app data folder first, then the user-level file (both documented in the README).
+const command = resolveScannerCommand(env, [join(dataDir, 'config.json'), join(homedir(), '.exorcist-98-crew', 'config.json')]);
 
 const server = createServer({ store: fileStore(dataDir), scanner: cliScanner(command), secret });
 server.listen(port, '127.0.0.1', () => {

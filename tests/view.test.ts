@@ -50,3 +50,19 @@ describe('REQ-04 page logic', () => {
     for (const i of imports) expect(i).toMatch(/^node:/);
   });
 });
+
+describe('Crew entry (seen in Crew 0.12.2: the host renders the default export as a React component)', () => {
+  it('app.json points ui.entry at the React entry', () => {
+    const app = JSON.parse(readFileSync(join(ROOT, 'app.json'), 'utf8')) as { ui: { entry: string } };
+    expect(app.ui.entry).toBe('dist/crew.mjs');
+  });
+
+  it('the entry has a default export and imports only react, which the host provides', () => {
+    const bundle = readFileSync(join(ROOT, 'ui/dist/crew.mjs'), 'utf8');
+    expect(bundle).toMatch(/export\s*\{[^}]*\bas default\b/);
+    const imports = [...bundle.matchAll(/import\s*(?:[^'"]*?from)?\s*["']([^"']+)["']/g)].map((m) => m[1]);
+    expect(imports.length).toBeGreaterThan(0);
+    for (const i of imports) expect(i).toBe('react');
+    expect(bundle).not.toMatch(/innerHTML/);
+  });
+});

@@ -5,15 +5,24 @@
   "description": "Nightly agent-security patrol: scans your project folders for prompt injection, poisoned MCP tools and risky agent settings.",
   "author": "pranavsaji",
   "license": "Apache-2.0",
-  "tags": ["security", "mcp", "prompt-injection", "agents"],
+  "tags": [
+    "security",
+    "mcp",
+    "prompt-injection",
+    "agents"
+  ],
   "highlights": [
     "Nightly patrol of the folders you choose, with new serious findings reported by the Sentry agent",
     "Dashboard page: infection level per folder, every finding down to the file, line and quoted text",
     "The agent never sees scanned text, only file, line and rule, so a poisoned file cannot steer it",
     "Agent-hygiene skill: safe habits for any Crew agent that reads repos or uses MCP servers"
   ],
-  "agents": ["agents/exorcist-sentry.json"],
-  "skills": ["skills/agent-hygiene"],
+  "agents": [
+    "agents/exorcist-sentry.json"
+  ],
+  "skills": [
+    "skills/agent-hygiene"
+  ],
   "backend": {
     "entryPoint": "backend/dist/server.mjs",
     "type": "node",
@@ -21,7 +30,7 @@
     "healthCheck": "/health"
   },
   "ui": {
-    "entry": "dist/index.mjs",
+    "entry": "dist/crew.mjs",
     "pages": [
       {
         "route": "/apps/exorcist-98-crew",
@@ -31,7 +40,7 @@
     ]
   },
   "permissions": {
-    "api": ["/apps/exorcist-98-crew/api"]
+    "cron": true
   },
   "crons": [
     {

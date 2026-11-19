@@ -23,3 +23,31 @@ about Crew that has not been tested in Crew).
 | C-015 | Low | Verified | `docs/PLAN.md` section 3 lists a Vite + React UI. The page is plain DOM bundled with esbuild (see `docs/MANIFEST_CHECK.md`). | Move to React after C-002 is checked in Crew, if wanted. |
 | C-016 | Medium | Unverified | `permissions.api` holds the app's own proxy path. The docs describe it as gateway API prefixes (`/api/crons`), and the page does not use `useAppApi`. It may be unnecessary. | In Crew, remove it and check that the page still loads. |
 | C-017 | Low | Unverified | The `validate-app-json` hook runs `npx vitest` relative to the working directory the IDE gives it, assumed to be the repo root. | Save `app.json` in the IDE and check that the test output appears. |
+
+## Result of installing in Crew 0.12.2 (2026-11-18, macOS)
+
+Installed with the official `cli.sh` installer, then
+`POST /api/apps/install` and `/enable` on `localhost:5476`.
+"Seen" means observed on the running gateway; "read" means read in the
+installed Crew package source.
+
+| ID | Result |
+|----|--------|
+| C-001 | **Partly verified.** Install and enable succeed. Agent `exorcist-98-crew/exorcist-sentry`, skill `agent-hygiene` and cron `nightly-patrol` are registered (seen); disabling removes the job and enabling re-adds it (seen). A patrol through the gateway proxy scanned the Haunted Repo and returned its findings (seen). **Not checked:** the Sentry agent answering in chat, and the cron firing. Those need a Kiro sign-in, which this machine does not have. The page itself is now checked (see C-002). |
+| C-002 | **Was wrong, fixed.** The dashboard does `React.lazy(() => import(entry))` and renders the module's default export as a React component with no props; `mountFunction` is not used (seen in the dashboard source). `ui/src/crew.ts` is now the entry (`ui.entry` = `dist/crew.mjs`) and hosts the plain-DOM `mount`. Checked in a signed-in Chrome: the page renders, a folder can be added, "Run patrol now" ran and showed `CRITICAL` with 38 serious and 2 minor findings, with no page errors. |
+| C-003 | **Verified.** The gateway starts the backend with `PORT=9100` (seen). |
+| C-004 | **Was wrong, fixed.** The header is `X-KiroCrew-Proxy`, not `X-Crew-Proxy` (read: `apps/routes_proxy.py`). Every real request would have got 401. Timestamp is in seconds and the signed path is the request-target the backend receives (read). The backend now accepts both names. The secret is also given in `KIROCREW_PROXY_SECRET`; the `.app_secret` file location was right. |
+| C-005 | **Verified.** The gateway forwards `/apps/<name>/api/<path>` as `/api/<path>`; the backend handles that form (seen: `/health` and `/status` answered 200 through the proxy). |
+| C-006 | **Verified.** `ui.entry` `dist/index.mjs` is served from `ui/dist/index.mjs`. |
+| C-007 | **Likely a problem, untested.** A request to the gateway without the dashboard token gets `403 Token required` (seen with curl). The cron message tells the agent to call the patrol URL, and the agent has no token to add. Test the cron once a Kiro sign-in exists. |
+| C-016 | **Verified: not needed.** With `permissions` reduced to `{"cron": true}` the page still loads and calls `/apps/exorcist-98-crew/api/status` (HTTP 200). `permissions.api` was removed from `app.json`. |
+
+Found only by installing (not in the Manifest reference):
+
+- **N-001** The gateway refuses an app with `crons` and no `permissions.cron: true`. Fixed in `app.json` and in `shared/manifest.ts`, with a test.
+- **N-002** The gateway probes `/health` without a signature. The backend answered 401 until `/health` was moved before the signature check (fixed in `backend/src/server.ts`, with a test). The gateway then listed the backend as reachable.
+- **N-003** Enabling a third-party app is refused until it is trusted (`agent.apps_trusted`). This machine's config now trusts only `exorcist-98-crew`.
+- **N-004** The backend reads its scanner path once at start. Adding `cliPath` to `~/.exorcist-98-crew/config.json` needs a disable and enable to take effect.
+
+
+Accessibility inside Crew: axe on the full dashboard page reports 4 `label-content-name-mismatch` violations. All four are Crew's own top-bar buttons (Command Bar, resource health, update pill, notifications), none are in this app's page.
