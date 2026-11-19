@@ -1,11 +1,13 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { APP_NAME, createServer } from './server.js';
+import { createServer as createHttpServer } from 'node:http';
+import { APP_NAME, createApp } from './server.js';
 import { cliScanner, resolveScannerCommand } from './scanner.js';
 import { fileStore } from './store.js';
 import { readSecret } from './secret.js';
-
+import { gatewayNotifier, noticeFor } from './notify.js';
+import { patrolHour, scheduleNightly } from './schedule.js';
 
 const env = process.env;
 // Crew 0.12.2 creates a private data/ folder in each app's directory and sets
@@ -17,11 +19,37 @@ const secret = readSecret(env, APP_NAME);
 // Crew's app data folder first, then the user-level file (both documented in the README).
 const command = resolveScannerCommand(env, [join(dataDir, 'config.json'), join(homedir(), '.exorcist-98-crew', 'config.json')]);
 
-const server = createServer({ store: fileStore(dataDir), scanner: cliScanner(command), secret });
+// Crew 0.12.2 passes the gateway's address in KIROCREW_GATEWAY_ORIGIN.
+const origin = env['KIROCREW_GATEWAY_ORIGIN'];
+const notifier = origin && secret ? gatewayNotifier(origin, APP_NAME, secret) : null;
+
+const app = createApp({
+  store: fileStore(dataDir),
+  scanner: cliScanner(command),
+  secret,
+  onPatrol: async (summary) => {
+    const notice = noticeFor(summary, APP_NAME);
+    if (!notice || !notifier) return;
+    const r = await notifier(notice);
+    // Outcome only; the notice itself names files, so it is not logged.
+    process.stderr.write(`exorcist-98-crew: notification ${r.ok ? 'sent' : `not sent (${r.error ?? 'unknown'})`}\n`);
+  },
+});
+
+const server = createHttpServer(app.handler);
+const hour = patrolHour(env['EXORCIST_PATROL_HOUR']);
+const stopSchedule = hour === null ? () => undefined : scheduleNightly(app.runPatrol, hour);
+
 server.listen(port, '127.0.0.1', () => {
   // Ids and settings only; never file contents.
   process.stderr.write(
-    `exorcist-98-crew backend on 127.0.0.1:${port}; signed requests ${secret ? 'required' : 'not required (no app secret found)'}; data in ${dataDir}\n`,
+    `exorcist-98-crew backend on 127.0.0.1:${port}; signed requests ${secret ? 'required' : 'not required (no app secret found)'}; ` +
+      `nightly patrol ${hour === null ? 'off' : `at ${hour}:00`}; notifications ${notifier ? 'on' : 'off'}; data in ${dataDir}\n`,
   );
 });
-for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => server.close(() => process.exit(0)));
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    stopSchedule();
+    server.close(() => process.exit(0));
+  });
+}

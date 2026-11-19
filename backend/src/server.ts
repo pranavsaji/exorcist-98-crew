@@ -20,6 +20,8 @@ export type Deps = {
   /** The gateway's app secret. When set, every request must be signed. */
   secret: string | null;
   now?: () => Date;
+  /** Called after each patrol that finished (HTTP or scheduled). Must not throw. */
+  onPatrol?: (summary: PatrolSummary) => Promise<void>;
 };
 
 /** The agent-facing patrol report: counts and locations, never quoted text. */
@@ -59,9 +61,31 @@ export function checkFolder(raw: string): { ok: true; path: string } | { ok: fal
   return { ok: true, path };
 }
 
+export type App = {
+  handler: (req: IncomingMessage, res: ServerResponse) => void;
+  /** Runs one patrol, or returns null if one is already running. */
+  runPatrol: () => Promise<PatrolSummary | null>;
+};
+
 export function createHandler(deps: Deps): (req: IncomingMessage, res: ServerResponse) => void {
+  return createApp(deps).handler;
+}
+
+export function createApp(deps: Deps): App {
   const now = deps.now ?? (() => new Date());
   let patrolRunning = false;
+
+  async function runPatrol(): Promise<PatrolSummary | null> {
+    if (patrolRunning) return null;
+    patrolRunning = true;
+    try {
+      const summary = await patrol();
+      if (deps.onPatrol) await deps.onPatrol(summary).catch(() => undefined);
+      return summary;
+    } finally {
+      patrolRunning = false;
+    }
+  }
 
   async function patrol(): Promise<PatrolSummary> {
     const ranAt = now().toISOString();
@@ -165,19 +189,15 @@ export function createHandler(deps: Deps): (req: IncomingMessage, res: ServerRes
     }
 
     if (route === '/patrol' && method === 'POST') {
-      if (patrolRunning) return send(res, 409, { error: 'A patrol is already running.' });
-      patrolRunning = true;
-      try {
-        return send(res, 200, await patrol());
-      } finally {
-        patrolRunning = false;
-      }
+      const summary = await runPatrol();
+      if (summary === null) return send(res, 409, { error: 'A patrol is already running.' });
+      return send(res, 200, summary);
     }
 
     return send(res, 404, { error: 'Not found.' });
   }
 
-  return (req, res) => {
+  const handler = (req: IncomingMessage, res: ServerResponse): void => {
     const chunks: Buffer[] = [];
     let size = 0;
     let tooBig = false;
@@ -193,6 +213,7 @@ export function createHandler(deps: Deps): (req: IncomingMessage, res: ServerRes
       });
     });
   };
+  return { handler, runPatrol };
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {

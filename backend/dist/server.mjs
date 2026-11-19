@@ -9,9 +9,9 @@ var __export = (target, all) => {
 import { existsSync as existsSync3 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { join as join3 } from "node:path";
+import { createServer as createHttpServer } from "node:http";
 
 // backend/src/server.ts
-import { createServer as createHttpServer } from "node:http";
 import { statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 
@@ -4209,9 +4209,20 @@ function checkFolder(raw) {
   }
   return { ok: true, path };
 }
-function createHandler(deps) {
+function createApp(deps) {
   const now = deps.now ?? (() => /* @__PURE__ */ new Date());
   let patrolRunning = false;
+  async function runPatrol() {
+    if (patrolRunning) return null;
+    patrolRunning = true;
+    try {
+      const summary = await patrol();
+      if (deps.onPatrol) await deps.onPatrol(summary).catch(() => void 0);
+      return summary;
+    } finally {
+      patrolRunning = false;
+    }
+  }
   async function patrol() {
     const ranAt = now().toISOString();
     const state = deps.store.read();
@@ -4317,17 +4328,13 @@ function createHandler(deps) {
       return;
     }
     if (route === "/patrol" && method === "POST") {
-      if (patrolRunning) return send(res, 409, { error: "A patrol is already running." });
-      patrolRunning = true;
-      try {
-        return send(res, 200, await patrol());
-      } finally {
-        patrolRunning = false;
-      }
+      const summary = await runPatrol();
+      if (summary === null) return send(res, 409, { error: "A patrol is already running." });
+      return send(res, 200, summary);
     }
     return send(res, 404, { error: "Not found." });
   }
-  return (req, res) => {
+  const handler = (req, res) => {
     const chunks = [];
     let size = 0;
     let tooBig = false;
@@ -4349,13 +4356,11 @@ function createHandler(deps) {
       });
     });
   };
+  return { handler, runPatrol };
 }
 function send(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
   res.end(JSON.stringify(body));
-}
-function createServer(deps) {
-  return createHttpServer(createHandler(deps));
 }
 
 // backend/src/scanner.ts
@@ -4415,6 +4420,90 @@ function readSecret(env2, appName, home = homedir()) {
   return s.length > 0 ? s : null;
 }
 
+// backend/src/notify.ts
+var CHANNEL = "new-threats";
+function noticeFor(summary, appName) {
+  const failed = summary.folders.filter((f) => !f.ok);
+  if (summary.newSeriousTotal === 0 && failed.length === 0) return null;
+  const lines = [];
+  for (const f of summary.folders) {
+    if (!f.ok) {
+      lines.push(`${f.path}: the scan failed (${f.error ?? "unknown error"}).`);
+      continue;
+    }
+    if (f.newSerious.length === 0) continue;
+    lines.push(`${f.path}: ${f.newSerious.length} new serious problem${f.newSerious.length === 1 ? "" : "s"}.`);
+    for (const x of f.newSerious.slice(0, 5)) lines.push(`  ${x.severity.toUpperCase()} ${x.title} (${x.ruleId}) in ${x.file}, line ${x.line}`);
+    if (f.newSerious.length > 5) lines.push(`  and ${f.newSerious.length - 5} more`);
+  }
+  const n = summary.newSeriousTotal;
+  const title = n > 0 ? `Exorcist 98: ${n} new serious problem${n === 1 ? "" : "s"} found` : `Exorcist 98: ${failed.length} folder scan${failed.length === 1 ? "" : "s"} failed`;
+  return {
+    channel: CHANNEL,
+    title,
+    body: lines.join("\n").slice(0, 4e3),
+    priority: summary.folders.some((f) => f.newSerious.some((x) => x.severity === "critical")) ? "critical" : "default",
+    url: `/apps/${appName}`,
+    group_key: `patrol-${summary.ranAt.slice(0, 10)}`
+  };
+}
+function tokenCookieName(origin2) {
+  const u = new URL(origin2);
+  return `mc_token_${u.port || (u.protocol === "https:" ? "443" : "80")}`;
+}
+function gatewayNotifier(origin2, appName, secret2, fetchFn = fetch) {
+  return async (notice) => {
+    try {
+      const t = await fetchFn(`${origin2}/api/apps/${encodeURIComponent(appName)}/token`, { method: "POST", headers: { "X-App-Secret": secret2 } });
+      if (!t.ok) return { ok: false, error: `token exchange returned ${t.status}` };
+      const token = (await t.json()).token;
+      if (typeof token !== "string" || token.length === 0) return { ok: false, error: "token exchange returned no token" };
+      const r = await fetchFn(`${origin2}/api/notifications/push`, {
+        method: "POST",
+        // Crew 0.12.2 reads tokens only from ?token= or the mc_token_<port> cookie,
+        // not from Authorization. The cookie keeps the token out of URLs and logs.
+        headers: { cookie: `${tokenCookieName(origin2)}=${token}`, "content-type": "application/json" },
+        body: JSON.stringify(notice)
+      });
+      if (r.ok) return { ok: true };
+      const detail = await r.json().then((j) => String(j.code ?? j.error ?? "")).catch(() => "");
+      return { ok: false, error: `push returned ${r.status}${detail ? ` (${detail.slice(0, 120)})` : ""}` };
+    } catch (e) {
+      return { ok: false, error: String(e).slice(0, 200) };
+    }
+  };
+}
+
+// backend/src/schedule.ts
+var DEFAULT_PATROL_HOUR = 2;
+function msUntilNextRun(now, hour2 = DEFAULT_PATROL_HOUR) {
+  const next = new Date(now);
+  next.setHours(hour2, 0, 0, 0);
+  if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+  return next.getTime() - now.getTime();
+}
+function patrolHour(raw) {
+  if (raw === void 0 || raw.trim() === "") return DEFAULT_PATROL_HOUR;
+  if (raw.trim().toLowerCase() === "off") return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : DEFAULT_PATROL_HOUR;
+}
+function scheduleNightly(run, hour2, now = () => /* @__PURE__ */ new Date(), timer = globalThis) {
+  let handle = null;
+  let stopped = false;
+  const arm = () => {
+    if (stopped) return;
+    handle = timer.setTimeout(() => {
+      void run().catch(() => void 0).finally(arm);
+    }, msUntilNextRun(now(), hour2));
+  };
+  arm();
+  return () => {
+    stopped = true;
+    if (handle !== null) timer.clearTimeout(handle);
+  };
+}
+
 // backend/src/main.ts
 var env = process.env;
 var crewData = env["KIROCREW_HOME"] ? join3(env["KIROCREW_HOME"], "apps", APP_NAME, "data") : null;
@@ -4422,11 +4511,32 @@ var dataDir = env["EXORCIST_CREW_DATA"] ?? (crewData && existsSync3(crewData) ? 
 var port = Number(env["PORT"] ?? 4598);
 var secret = readSecret(env, APP_NAME);
 var command = resolveScannerCommand(env, [join3(dataDir, "config.json"), join3(homedir2(), ".exorcist-98-crew", "config.json")]);
-var server = createServer({ store: fileStore(dataDir), scanner: cliScanner(command), secret });
+var origin = env["KIROCREW_GATEWAY_ORIGIN"];
+var notifier = origin && secret ? gatewayNotifier(origin, APP_NAME, secret) : null;
+var app = createApp({
+  store: fileStore(dataDir),
+  scanner: cliScanner(command),
+  secret,
+  onPatrol: async (summary) => {
+    const notice = noticeFor(summary, APP_NAME);
+    if (!notice || !notifier) return;
+    const r = await notifier(notice);
+    process.stderr.write(`exorcist-98-crew: notification ${r.ok ? "sent" : `not sent (${r.error ?? "unknown"})`}
+`);
+  }
+});
+var server = createHttpServer(app.handler);
+var hour = patrolHour(env["EXORCIST_PATROL_HOUR"]);
+var stopSchedule = hour === null ? () => void 0 : scheduleNightly(app.runPatrol, hour);
 server.listen(port, "127.0.0.1", () => {
   process.stderr.write(
-    `exorcist-98-crew backend on 127.0.0.1:${port}; signed requests ${secret ? "required" : "not required (no app secret found)"}; data in ${dataDir}
+    `exorcist-98-crew backend on 127.0.0.1:${port}; signed requests ${secret ? "required" : "not required (no app secret found)"}; nightly patrol ${hour === null ? "off" : `at ${hour}:00`}; notifications ${notifier ? "on" : "off"}; data in ${dataDir}
 `
   );
 });
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => server.close(() => process.exit(0)));
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => {
+    stopSchedule();
+    server.close(() => process.exit(0));
+  });
+}

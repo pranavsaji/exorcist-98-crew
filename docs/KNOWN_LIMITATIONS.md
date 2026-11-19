@@ -17,7 +17,7 @@ about Crew that has not been tested in Crew).
 | C-009 | Medium | Verified | The MCP rug-pull watch from `docs/PLAN.md` (reading the Shield's pin file) is not built. The patrol only scans folders. | Read `.exorcist/pins.json` in each folder and report changed tools. |
 | C-010 | Low | Verified | Only the 500 worst findings per folder are stored. In a folder with more, the ones beyond 500 count as new on every patrol. | Store keys for all findings, details for the first 500. |
 | C-011 | Low | Verified | The page does not use the Crew SDK hooks or UI components and draws its own retro styling, so it does not follow the Crew theme. Chosen so the bundle has no imports that could fail (see `design.md`). | Use `useTheme` and the SDK components once C-002 is checked. |
-| C-012 | Low | Verified | There is no notification or sidebar badge for new findings; only the agent's cron reply. | Use `useNotify`/`useNavBadge` or the notification API. |
+| C-012 | Low | Fixed | New serious findings and failed scans now raise a Crew notification on the `new-threats` channel: counts, files, lines and rule names, never quoted text. Seen in Crew 0.12.2: "Exorcist 98: 38 new serious problems found", priority critical. No sidebar badge yet. | Add `useNavBadge` if wanted. |
 | C-013 | Low | Verified | Patrols scan folders one at a time with no overall time limit (each scan has 120 seconds). Twenty slow folders could take 40 minutes. | Add an overall limit or run scans in parallel. |
 | C-014 | Low | Verified | The app has no icon, screenshots or hero images for the App Store listing. | Add them before submitting to the registry. |
 | C-015 | Low | Verified | `docs/PLAN.md` section 3 lists a Vite + React UI. The page is plain DOM bundled with esbuild (see `docs/MANIFEST_CHECK.md`). | Move to React after C-002 is checked in Crew, if wanted. |
@@ -39,7 +39,7 @@ installed Crew package source.
 | C-004 | **Was wrong, fixed.** The header is `X-KiroCrew-Proxy`, not `X-Crew-Proxy` (read: `apps/routes_proxy.py`). Every real request would have got 401. Timestamp is in seconds and the signed path is the request-target the backend receives (read). The backend now accepts both names. The secret is also given in `KIROCREW_PROXY_SECRET`; the `.app_secret` file location was right. |
 | C-005 | **Verified.** The gateway forwards `/apps/<name>/api/<path>` as `/api/<path>`; the backend handles that form (seen: `/health` and `/status` answered 200 through the proxy). |
 | C-006 | **Verified.** `ui.entry` `dist/index.mjs` is served from `ui/dist/index.mjs`. |
-| C-007 | **Likely a problem, untested.** A request to the gateway without the dashboard token gets `403 Token required` (seen with curl). The cron message tells the agent to call the patrol URL, and the agent has no token to add. Test the cron once a Kiro sign-in exists. |
+| C-007 | **Confirmed, worked around.** A request without the dashboard token gets `403 Token required`, so an agent cannot start a patrol through the proxy. The backend now patrols by itself every night at 02:00 local time (`EXORCIST_PATROL_HOUR`, `off` to disable) and sends a Crew notification. The agent cron is kept but registered paused, and its message no longer asks the agent to start a scan. |
 | C-016 | **Verified: not needed.** With `permissions` reduced to `{"cron": true}` the page still loads and calls `/apps/exorcist-98-crew/api/status` (HTTP 200). `permissions.api` was removed from `app.json`. |
 
 Found only by installing (not in the Manifest reference):
@@ -51,3 +51,6 @@ Found only by installing (not in the Manifest reference):
 
 
 Accessibility inside Crew: axe on the full dashboard page reports 4 `label-content-name-mismatch` violations. All four are Crew's own top-bar buttons (Command Bar, resource health, update pill, notifications), none are in this app's page.
+- **N-005** App notifications need three things the docs do not list: exchange the app secret for a token (`POST /api/apps/<name>/token` with `X-App-Secret`), send that token as the `mc_token_<port>` cookie (the gateway ignores `Authorization: Bearer` and answered `403 Token required`), and declare the channel under `notifications.channels` in `app.json`. Fixed in `backend/src/notify.ts`, with tests; seen working in Crew 0.12.2.
+- **N-006** A trust grant (`agent.apps_trusted`) made before installing is refused at install ("execution trust predates repository binding"). Install first, then trust, then enable.
+- **N-007** The nightly patrol in the backend has run only in unit tests (a fake timer). The patrol it calls is the same one the page runs, and that one was seen sending a notification in Crew.

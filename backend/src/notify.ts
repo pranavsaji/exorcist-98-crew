@@ -38,6 +38,12 @@ export function noticeFor(summary: PatrolSummary, appName: string): Notice | nul
   };
 }
 
+/** `mc_token_<port>`, with the port of the gateway's address. */
+export function tokenCookieName(origin: string): string {
+  const u = new URL(origin);
+  return `mc_token_${u.port || (u.protocol === 'https:' ? '443' : '80')}`;
+}
+
 export type Notifier = (notice: Notice) => Promise<{ ok: boolean; error?: string }>;
 
 /** Sends through the gateway. Never throws: a failed notice must not fail the patrol. */
@@ -50,10 +56,15 @@ export function gatewayNotifier(origin: string, appName: string, secret: string,
       if (typeof token !== 'string' || token.length === 0) return { ok: false, error: 'token exchange returned no token' };
       const r = await fetchFn(`${origin}/api/notifications/push`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        // Crew 0.12.2 reads tokens only from ?token= or the mc_token_<port> cookie,
+        // not from Authorization. The cookie keeps the token out of URLs and logs.
+        headers: { cookie: `${tokenCookieName(origin)}=${token}`, 'content-type': 'application/json' },
         body: JSON.stringify(notice),
       });
-      return r.ok ? { ok: true } : { ok: false, error: `push returned ${r.status}` };
+      if (r.ok) return { ok: true };
+      // The gateway answers with a short error code (no secrets), which says why.
+      const detail = await r.json().then((j: { code?: unknown; error?: unknown }) => String(j.code ?? j.error ?? '')).catch(() => '');
+      return { ok: false, error: `push returned ${r.status}${detail ? ` (${detail.slice(0, 120)})` : ''}` };
     } catch (e) {
       return { ok: false, error: String(e).slice(0, 200) };
     }

@@ -16,8 +16,8 @@ Companion to the Kiroween 2026 entry
 | Part                                              | What it does                                                                                                                                                                                |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Dashboard page** (`/apps/exorcist-98-crew`)     | Add or remove folders, run a patrol, see an infection level per folder (text label plus shape, never colour alone), open any finding to see where it is, the quoted text and how to fix it. |
-| **Nightly patrol** (cron `nightly-patrol`, 02:00) | Asks the Sentry agent to start a patrol and report new serious findings.                                                                                                                    |
-| **Exorcist Sentry agent**                         | Starts the patrol and reports what it returns. It never sees the scanned text (see below).                                                                                                  |
+| **Nightly patrol** (02:00, in the backend) | Scans every watched folder and sends a Crew notification for new serious findings or failed scans. `EXORCIST_PATROL_HOUR` changes the hour; `off` disables it. |
+| **Exorcist Sentry agent** (cron `nightly-patrol`, paused) | Summarises the latest patrol on request. It never starts a scan and never sees the scanned text (see below). The cron is paused because in Crew 0.12.2 an agent has no token for the app's API. |
 | **Agent-hygiene skill**                           | Safe habits for any Crew agent that reads repos or uses MCP servers.                                                                                                                        |
 | **Backend**                                       | Keeps the folder list, runs the scanner, diffs against the last patrol.                                                                                                                     |
 
@@ -52,7 +52,8 @@ no shell and a 120-second limit. In order of preference:
 1. `EXORCIST_CLI`: path to the Exorcist 98 CLI bundle, for example
    `/path/to/exorcist-98/packages/cli/dist/index.mjs` (build it with
    `pnpm --filter @exorcist-98/cli build` in the main repo).
-2. `cliPath` in `~/.exorcist-98-crew/config.json`, same meaning.
+2. `cliPath` in a `config.json`, first in Crew's app data folder
+   (`~/.kiro/crew/apps/exorcist-98-crew/data/`), then in `~/.exorcist-98-crew/`.
 3. `npx -y @exorcist-98/cli@0.1.0`. **Not published to npm yet**, so for now
    use 1 or 2.
 
@@ -81,15 +82,16 @@ backend with `X-Crew-Proxy`. It is a test harness, not Crew.
 
 ## Status
 
-Built and tested outside Crew: 90 tests pass (including a scan of the Haunted
-Repo with the real Exorcist 98 CLI), and the page passes a 16-step Chrome run
-with 0 axe violations through the stand-in gateway.
+Run inside Kiro Crew 0.12.2 on macOS (2026-11-18 and 19): the app installs,
+enables, patrols the Haunted Repo through the gateway proxy, shows its page in
+the signed-in dashboard, and sends a Crew notification for new serious
+findings. 103 tests pass, and the page passes a 16-step Chrome run with 0 axe
+violations through the stand-in gateway.
 
-**Run inside Kiro Crew 0.12.2:** it installs, enables, registers the agent,
-skill and cron, the page works in a signed-in dashboard, and a patrol through the
-gateway proxy works. The agent in chat and the cron firing are not checked yet
-(they need a Kiro sign-in). See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) for
-every assumption about Crew that still has to be checked.
+Not checked yet: the Sentry agent in chat, a cron firing, and the backend's
+nightly timer on a real clock. See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md);
+[`docs/COORDINATION.md`](docs/COORDINATION.md) has the hand-over notes between
+work sessions.
 
 ## License
 

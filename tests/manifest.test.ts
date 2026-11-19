@@ -39,8 +39,9 @@ describe('REQ-01 app.json', () => {
 
   it('runs the nightly patrol at 02:00 with the Sentry agent', () => {
     const m = ManifestSchema.parse(manifest());
-    expect(m.crons).toEqual([expect.objectContaining({ name: 'nightly-patrol', cron_expr: '0 2 * * *', agent: 'exorcist-sentry' })]);
-    expect(m.crons?.[0]?.message).toContain('/apps/exorcist-98-crew/api/patrol');
+    expect(m.crons).toEqual([expect.objectContaining({ name: 'nightly-patrol', cron_expr: '0 2 * * *', agent: 'exorcist-sentry', enabled: false })]);
+    // The backend patrols itself (C-007): the agent cron must not start a scan.
+    expect(m.crons?.[0]?.message).toMatch(/do not start a scan yourself/);
   });
 });
 
@@ -159,5 +160,12 @@ describe('PBT-M0 manifest properties', () => {
     fc.assert(fc.property(fc.string({ maxLength: 20 }).filter((s) => !isSemver(s)), (version) => {
       expect(ManifestSchema.safeParse({ ...base, version }).success).toBe(false);
     }), runs);
+  });
+});
+
+describe('notification channel (Crew 0.12.2 refuses a push to an undeclared channel)', () => {
+  it('declares the channel the backend pushes to', () => {
+    const m = manifest() as { notifications?: { channels?: { id: string; defaultPriority?: string }[] } };
+    expect(m.notifications?.channels).toEqual([expect.objectContaining({ id: 'new-threats', defaultPriority: 'critical' })]);
   });
 });
