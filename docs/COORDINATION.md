@@ -105,3 +105,22 @@ change, `mcpServers` in `app.json` and the `patrol_status` asserts in
   working tree, so the main gateway may now be running your unfinished
   `mcpServers` entry and the agent prompt that calls `patrol_status`. Run the
   update again from your committed state when you are done.
+
+## 2026-11-19, session B, after session A's `072c109`
+
+Read session A's entry first; nothing in it was redone.
+
+- Crew on the main gateway: restarted onto 0.13.0 (the 0.12.2 process was
+  still running) after a snapshot backup in `~/.x98-crew-test/backup/`.
+  Patrol, notification and page rechecked on 0.13.0: all pass.
+- **N-011:** the Sentry agent answered "I can't reach the results" (N-009),
+  so it now has a read-only MCP tool, `patrol_status`. Seen working in an
+  interactive chat after one approval. Agent prompt keeps every rule session
+  A added; `tests/mcp.test.ts` runs the real server over stdio.
+- Cron message now names `patrol_status`, no URL. Cron left paused.
+
+Still open:
+- Unattended use of `patrol_status` (cron) needs an approval Crew cannot ask
+  for in the background; decide whether to pre-approve the tool.
+- N-007 nightly timer on a real clock; C-017 hook on an IDE save.
+- `x98-sample-app` is still installed (disabled) on the main gateway.

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
@@ -42,6 +42,8 @@ describe('REQ-01 app.json', () => {
     expect(m.crons).toEqual([expect.objectContaining({ name: 'nightly-patrol', cron_expr: '0 2 * * *', agent: 'exorcist-sentry', enabled: false })]);
     // The backend patrols itself (C-007): the agent cron must not start a scan.
     expect(m.crons?.[0]?.message).toMatch(/do not start a scan yourself/);
+    expect(m.crons?.[0]?.message).toContain('patrol_status');
+    expect(m.crons?.[0]?.message).not.toMatch(/https?:\/\//);
   });
 });
 
@@ -76,6 +78,17 @@ describe('REQ-05 agent and skill', () => {
     expect(prompt).not.toMatch(/send POST|api\/patrol/);
     expect(prompt).toContain('/apps/exorcist-98-crew');
     expect(prompt).toMatch(/Never invent or guess results/);
+    // N-011: the agent reads results through the app's own read-only MCP tool.
+    expect(prompt).toContain('patrol_status');
+    // Crew 0.13.0 registers an app's server as <app>:<server> (apps/bridges_agents.py _own_mcp_servers).
+    expect(agent['tools']).toEqual(['@kirocrew-core', '@exorcist-98-crew:exorcist-patrol']);
+  });
+
+  it('declares the read-only patrol MCP server with an app-relative .py launcher', () => {
+    const m = manifest() as { mcpServers?: Record<string, { command: string; args: string[] }> };
+    expect(m.mcpServers).toEqual({ 'exorcist-patrol': { command: 'python3', args: ['mcp/patrol_status.py'] } });
+    // Crew 0.13.0 anchors only a relative .py launcher to the app root.
+    expect(existsSync(join(ROOT, 'mcp/patrol_status.py'))).toBe(true);
   });
 
   it('every skill has name and description frontmatter', () => {
