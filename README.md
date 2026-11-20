@@ -91,7 +91,7 @@ by `EXORCIST_CREW_DATA`. It holds the folder list and the last patrol's findings
 ```sh
 npm install
 npm run build      # ui/dist/index.mjs and backend/dist/server.mjs (both committed)
-npm test           # 90 unit and property tests
+npm test           # 140 unit and property tests
 npm run typecheck
 npm run e2e        # Chrome + axe through a stand-in gateway (scripts/preview.mjs)
 ```
