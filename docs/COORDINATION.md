@@ -133,3 +133,15 @@ Still open:
   `assets/hero-dark.png`, named in `app.json`; size checks in
   `tests/foundation.test.ts`. Updated on 5476; Crew serves the icon at
   `/apps/exorcist-98-crew/art/assets/icon.png` (200).
+
+## 2026-11-19 21:20, session B (main gateway, at the user's request)
+
+Built on session A's `7981273` (App Store art); nothing of it changed.
+
+- **N-007 done:** patrol watched firing on a real clock (21:10:00), with a
+  notification. New `patrolTime` in the app's `data/config.json`; that file was
+  removed afterwards, so the main gateway is back at 02:00.
+- **N-012 done:** only `patrol_status` is pre-approved in the agent spec; a
+  triggered cron run succeeded unattended with correct results and no quoted
+  text. The cron is now **enabled at 02:15** (manifest), job `1e89f00f`.
+- Not changed: `x98-sample-app` (still installed, disabled).

@@ -37,9 +37,10 @@ describe('REQ-01 app.json', () => {
     expect(m.permissions).toEqual({ cron: true });
   });
 
-  it('runs the nightly patrol at 02:00 with the Sentry agent', () => {
+  it('the Sentry agent reports on the patrol at 02:15', () => {
     const m = ManifestSchema.parse(manifest());
-    expect(m.crons).toEqual([expect.objectContaining({ name: 'nightly-patrol', cron_expr: '0 2 * * *', agent: 'exorcist-sentry', enabled: false })]);
+    // 02:15, after the backend's 02:00 patrol, so the agent reports tonight's results.
+    expect(m.crons).toEqual([expect.objectContaining({ name: 'nightly-patrol', cron_expr: '15 2 * * *', agent: 'exorcist-sentry', enabled: true })]);
     // The backend patrols itself (C-007): the agent cron must not start a scan.
     expect(m.crons?.[0]?.message).toMatch(/do not start a scan yourself/);
     expect(m.crons?.[0]?.message).toContain('patrol_status');
@@ -82,6 +83,9 @@ describe('REQ-05 agent and skill', () => {
     expect(prompt).toContain('patrol_status');
     // Crew 0.13.0 registers an app's server as <app>:<server> (apps/bridges_agents.py _own_mcp_servers).
     expect(agent['tools']).toEqual(['@kirocrew-core', '@exorcist-98-crew:exorcist-patrol']);
+    // Only the read-only patrol_status tool is pre-approved, so the paused cron
+    // can read results unattended; every other tool still asks.
+    expect(agent['allowedTools']).toEqual(['@exorcist-98-crew:exorcist-patrol/patrol_status']);
   });
 
   it('declares the read-only patrol MCP server with an app-relative .py launcher', () => {

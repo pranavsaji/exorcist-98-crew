@@ -6,7 +6,7 @@ var __export = (target, all) => {
 };
 
 // backend/src/main.ts
-import { existsSync as existsSync3 } from "node:fs";
+import { existsSync as existsSync3, readFileSync as readFileSync5 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { join as join4 } from "node:path";
 import { createServer as createHttpServer } from "node:http";
@@ -4370,9 +4370,9 @@ var SCAN_TIMEOUT_MS = 12e4;
 var SCAN_MAX_OUTPUT = 20 * 1024 * 1024;
 var NO_SCANNER_ERROR = `No Exorcist 98 scanner is set up. Set EXORCIST_CLI, or "cliPath" in the app's data/config.json, to the CLI's index.mjs.`;
 var ConfigSchema = external_exports.object({ cliPath: external_exports.string().min(1).optional() }).passthrough();
-function resolveScannerCommand(env2, configFiles) {
+function resolveScannerCommand(env2, configFiles2) {
   let cliPath = env2["EXORCIST_CLI"];
-  for (const configFile of typeof configFiles === "string" ? [configFiles] : configFiles) {
+  for (const configFile of typeof configFiles2 === "string" ? [configFiles2] : configFiles2) {
     if (cliPath || !existsSync(configFile)) continue;
     try {
       const parsed = ConfigSchema.safeParse(JSON.parse(readFileSync2(configFile, "utf8")));
@@ -4451,7 +4451,7 @@ function pinFindings(text) {
     const serverAt = lineOf(text, server2);
     const pendingAt = lineOf(text, "pending", serverAt.index);
     for (const [tool, p] of Object.entries(s.pending)) {
-      const at = lineOf(text, tool, pendingAt.index);
+      const at2 = lineOf(text, tool, pendingAt.index);
       out.push({
         ruleId: RUG_PULL_RULE,
         // Fixed text: tool and server names come from the MCP server, and titles
@@ -4459,7 +4459,7 @@ function pinFindings(text) {
         title: "MCP tool changed after it was pinned",
         severity: "critical",
         file: PIN_FILE,
-        line: at.line,
+        line: at2.line,
         col: 1,
         // Names and the new description are attacker-controlled: shown on the
         // page as plain text only, never sent to the agent or in a notification.
@@ -4583,26 +4583,30 @@ function gatewayNotifier(origin2, appName, secret2, fetchFn = fetch) {
 
 // backend/src/schedule.ts
 var DEFAULT_PATROL_HOUR = 2;
-function msUntilNextRun(now, hour2 = DEFAULT_PATROL_HOUR) {
+function msUntilNextRun(now, hour = DEFAULT_PATROL_HOUR, minute = 0) {
   const next = new Date(now);
-  next.setHours(hour2, 0, 0, 0);
+  next.setHours(hour, minute, 0, 0);
   if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
   return next.getTime() - now.getTime();
 }
-function patrolHour(raw) {
-  if (raw === void 0 || raw.trim() === "") return DEFAULT_PATROL_HOUR;
-  if (raw.trim().toLowerCase() === "off") return null;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : DEFAULT_PATROL_HOUR;
+function parsePatrolTime(...raws) {
+  const raw = raws.find((r) => r !== void 0 && r.trim() !== "")?.trim().toLowerCase();
+  if (raw === void 0) return { hour: DEFAULT_PATROL_HOUR, minute: 0 };
+  if (raw === "off") return null;
+  const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(raw);
+  const hour = m ? Number(m[1]) : NaN;
+  const minute = m?.[2] !== void 0 ? Number(m[2]) : 0;
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 ? { hour, minute } : { hour: DEFAULT_PATROL_HOUR, minute: 0 };
 }
-function scheduleNightly(run, hour2, now = () => /* @__PURE__ */ new Date(), timer = globalThis) {
+var formatPatrolTime = (t) => `${String(t.hour).padStart(2, "0")}:${String(t.minute).padStart(2, "0")}`;
+function scheduleNightly(run, at2, now = () => /* @__PURE__ */ new Date(), timer = globalThis) {
   let handle = null;
   let stopped = false;
   const arm = () => {
     if (stopped) return;
     handle = timer.setTimeout(() => {
       void run().catch(() => void 0).finally(arm);
-    }, msUntilNextRun(now(), hour2));
+    }, msUntilNextRun(now(), typeof at2 === "number" ? at2 : at2.hour, typeof at2 === "number" ? 0 : at2.minute));
   };
   arm();
   return () => {
@@ -4617,7 +4621,18 @@ var crewData = env["KIROCREW_HOME"] ? join4(env["KIROCREW_HOME"], "apps", APP_NA
 var dataDir = env["EXORCIST_CREW_DATA"] ?? (crewData && existsSync3(crewData) ? crewData : join4(homedir2(), ".exorcist-98-crew"));
 var port = Number(env["PORT"] ?? 4598);
 var secret = readSecret(env, APP_NAME);
-var command = resolveScannerCommand(env, [join4(dataDir, "config.json"), join4(homedir2(), ".exorcist-98-crew", "config.json")]);
+var configFiles = [join4(dataDir, "config.json"), join4(homedir2(), ".exorcist-98-crew", "config.json")];
+var command = resolveScannerCommand(env, configFiles);
+function configPatrolTime() {
+  for (const f of configFiles) {
+    try {
+      const v = JSON.parse(readFileSync5(f, "utf8")).patrolTime;
+      if (typeof v === "string") return v;
+    } catch {
+    }
+  }
+  return void 0;
+}
 var origin = env["KIROCREW_GATEWAY_ORIGIN"];
 var notifier = origin && secret ? gatewayNotifier(origin, APP_NAME, secret) : null;
 var app = createApp({
@@ -4634,11 +4649,11 @@ var app = createApp({
   }
 });
 var server = createHttpServer(app.handler);
-var hour = patrolHour(env["EXORCIST_PATROL_HOUR"]);
-var stopSchedule = hour === null ? () => void 0 : scheduleNightly(app.runPatrol, hour);
+var at = parsePatrolTime(env["EXORCIST_PATROL_TIME"], env["EXORCIST_PATROL_HOUR"], configPatrolTime());
+var stopSchedule = at === null ? () => void 0 : scheduleNightly(app.runPatrol, at);
 server.listen(port, "127.0.0.1", () => {
   process.stderr.write(
-    `exorcist-98-crew backend on 127.0.0.1:${port}; signed requests ${secret ? "required" : "not required (no app secret found)"}; scanner ${command ? "set" : "NOT set"}; nightly patrol ${hour === null ? "off" : `at ${hour}:00`}; notifications ${notifier ? "on" : "off"}; data in ${dataDir}
+    `exorcist-98-crew backend on 127.0.0.1:${port}; signed requests ${secret ? "required" : "not required (no app secret found)"}; scanner ${command ? "set" : "NOT set"}; nightly patrol ${at === null ? "off" : `at ${formatPatrolTime(at)}`}; notifications ${notifier ? "on" : "off"}; data in ${dataDir}
 `
   );
 });

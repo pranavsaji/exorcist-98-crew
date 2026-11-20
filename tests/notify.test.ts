@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { CHANNEL, gatewayNotifier, noticeFor, tokenCookieName } from '../backend/src/notify.js';
-import { msUntilNextRun, patrolHour, scheduleNightly } from '../backend/src/schedule.js';
+import { formatPatrolTime, msUntilNextRun, parsePatrolTime, patrolHour, scheduleNightly } from '../backend/src/schedule.js';
 import { createApp } from '../backend/src/server.js';
 import type { PatrolSummary } from '../backend/src/server.js';
 import { memoryStore } from '../backend/src/store.js';
@@ -92,6 +92,26 @@ describe('nightly schedule', () => {
     expect(patrolHour('off')).toBeNull();
     expect(patrolHour('25')).toBe(2);
     expect(patrolHour('two')).toBe(2);
+  });
+
+  it('reads HH:MM, H or off, first set value wins, invalid means 02:00', () => {
+    expect(parsePatrolTime(undefined, undefined, undefined)).toEqual({ hour: 2, minute: 0 });
+    expect(parsePatrolTime('21:37')).toEqual({ hour: 21, minute: 37 });
+    expect(parsePatrolTime(undefined, '5', '23:59')).toEqual({ hour: 5, minute: 0 });
+    expect(parsePatrolTime('', ' ', '23:59')).toEqual({ hour: 23, minute: 59 });
+    expect(parsePatrolTime(undefined, undefined, 'OFF')).toBeNull();
+    for (const bad of ['24:00', '12:60', '7:5', 'noon', '-1']) expect(parsePatrolTime(bad)).toEqual({ hour: 2, minute: 0 });
+    expect(formatPatrolTime({ hour: 2, minute: 5 })).toBe('02:05');
+  });
+
+  it('the next run lands on the chosen minute, within a day', () => {
+    fc.assert(fc.property(fc.date({ min: new Date('2026-01-01'), max: new Date('2027-12-31') }), fc.integer({ min: 0, max: 23 }), fc.integer({ min: 0, max: 59 }), (now, h, m) => {
+      const ms = msUntilNextRun(now, h, m);
+      expect(ms).toBeGreaterThan(0);
+      expect(ms).toBeLessThanOrEqual(25 * 3600 * 1000);
+      const at = new Date(now.getTime() + ms);
+      expect([at.getMinutes(), at.getSeconds()]).toEqual([m, 0]);
+    }));
   });
 
   it('runs, re-arms after each run, and stops', async () => {

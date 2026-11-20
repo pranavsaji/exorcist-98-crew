@@ -6,5 +6,8 @@
   "tools": [
     "@kirocrew-core",
     "@exorcist-98-crew:exorcist-patrol"
+  ],
+  "allowedTools": [
+    "@exorcist-98-crew:exorcist-patrol/patrol_status"
   ]
 }

@@ -100,7 +100,7 @@ backend with `X-Crew-Proxy`. It is a test harness, not Crew.
 Run inside Kiro Crew 0.12.2 and 0.13.0 on macOS (2026-11-18 and 19): the app installs,
 enables, patrols the Haunted Repo through the gateway proxy, shows its page in
 the signed-in dashboard, and sends a Crew notification for new serious
-findings. 122 tests pass, and the page passes a 16-step Chrome run with 0 axe
+findings. 127 tests pass, and the page passes a 16-step Chrome run with 0 axe
 violations through the stand-in gateway.
 
 With a Kiro sign-in, the Sentry agent answers in chat and the agent cron runs.
