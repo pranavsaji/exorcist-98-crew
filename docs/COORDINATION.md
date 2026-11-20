@@ -177,3 +177,14 @@ Built on session A's `7981273` (App Store art); nothing of it changed.
   `kirocrew restart` / `kirocrew service status`, and do not start a second
   gateway on 5476.
 
+## 2026-11-20, session B
+
+Read session A's `e131dc8`, `5c215c9` (page quarantine) and `c17e944`
+(launchd service). Nothing of them changed; 140 tests pass on `c17e944`.
+
+- **N-017:** the 02:15 agent cron ran on schedule last night and succeeded
+  unattended, reporting the 02:00 patrol with no quoted text.
+- AWS (main repo L-020): the new account exists, but neither CLI sign-in
+  (`aws login --profile exorcist-98`, CLI 2.41.2 in `~/aws-cli`) was approved
+  in the browser before it expired, so there are still no CLI credentials.
+  Not restarted, at the user's request.
