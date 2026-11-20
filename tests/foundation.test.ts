@@ -61,3 +61,26 @@ describe('M0 REQ-04 manifest hook', () => {
     expect(existsSync(join(ROOT, 'tests/manifest.test.ts'))).toBe(true);
   });
 });
+
+describe('C-014 App Store art', () => {
+  /** Width and height from a PNG's IHDR chunk. */
+  const png = (p: string): { w: number; h: number } => {
+    const b = readFileSync(join(ROOT, p));
+    expect(b.subarray(1, 4).toString('latin1')).toBe('PNG');
+    return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+  };
+  const m = JSON.parse(read('app.json')) as Record<string, unknown>;
+  it('has a square PNG icon of at least 256x256 (Manifest reference)', () => {
+    const { w, h } = png(m['iconPath'] as string);
+    expect(w).toBe(h);
+    expect(w).toBeGreaterThanOrEqual(256);
+  });
+  it('has 16:9 light and dark hero images at 1200x675', () => {
+    for (const k of ['heroImage', 'heroImageDark']) expect(png(m[k] as string)).toEqual({ w: 1200, h: 675 });
+  });
+  it('lists at most 5 screenshots, all present', () => {
+    const shots = m['screenshots'] as string[];
+    expect(shots.length).toBeLessThanOrEqual(5);
+    for (const s of shots) expect(existsSync(join(ROOT, s)), s).toBe(true);
+  });
+});

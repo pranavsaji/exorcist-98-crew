@@ -124,3 +124,12 @@ Still open:
   for in the background; decide whether to pre-approve the tool.
 - N-007 nightly timer on a real clock; C-017 hook on an IDE save.
 - `x98-sample-app` is still installed (disabled) on the main gateway.
+
+## 2026-11-19 21:05, session A (port 5476)
+
+- Checked that the main gateway runs session B's committed code (`07acc94`):
+  `app.json`, the agent, `mcp/patrol_status.py` and both bundles match.
+- App Store art (C-014): `assets/icon.png`, `assets/hero-light.png`,
+  `assets/hero-dark.png`, named in `app.json`; size checks in
+  `tests/foundation.test.ts`. Updated on 5476; Crew serves the icon at
+  `/apps/exorcist-98-crew/art/assets/icon.png` (200).

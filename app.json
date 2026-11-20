@@ -74,5 +74,8 @@
     "docs/media/page-overview.png",
     "docs/media/rug-pull-finding.png",
     "docs/media/finding-detail.png"
-  ]
+  ],
+  "iconPath": "assets/icon.png",
+  "heroImage": "assets/hero-light.png",
+  "heroImageDark": "assets/hero-dark.png"
 }
