@@ -48,6 +48,13 @@ describe('REQ-01 app.json', () => {
   });
 });
 
+describe('C-018 signed principal', () => {
+  it('asks the gateway to sign who sent each request, so only the owner can move files', () => {
+    const m = ManifestSchema.parse(manifest());
+    expect((m.backend as Record<string, unknown>)['signedPrincipal']).toBe(true);
+    expect(validateManifest({ ...manifest(), backend: { entryPoint: 'backend/dist/server.mjs', signedPrincipal: 'yes' } }, ROOT).join()).toMatch(/signedPrincipal/);
+  });
+});
 describe('PBT-CRW-04 manifest paths', () => {
   const seg = fc.stringMatching(/^[a-z0-9_-]{1,8}$/);
   it('rejects any path that climbs out with ..', () => {

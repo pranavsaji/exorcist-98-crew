@@ -28,7 +28,8 @@
     "entryPoint": "backend/dist/server.mjs",
     "type": "node",
     "port": "auto",
-    "healthCheck": "/health"
+    "healthCheck": "/health",
+    "signedPrincipal": true
   },
   "ui": {
     "entry": "dist/crew.mjs",

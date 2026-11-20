@@ -49,13 +49,14 @@ export const missingScanner: Scanner = async () => ({ ok: false, error: NO_SCANN
 export const defaultConfigFile = (env: NodeJS.ProcessEnv): string =>
   join(env['EXORCIST_CREW_DATA'] ?? join(homedir(), '.exorcist-98-crew'), 'config.json');
 
-/** Runs `<command> scan <folder> --format json --fail-on none`, with no shell. */
+/** Runs `<command> scan <folder> --format json --fail-on none --ignore .exorcist/vault`, with no shell. */
 export function cliScanner(cmd: ScannerCommand, timeoutMs = SCAN_TIMEOUT_MS): Scanner {
   return (folder) =>
     new Promise((resolvePromise) => {
       execFile(
         cmd.file,
-        [...cmd.args, 'scan', folder, '--format', 'json', '--fail-on', 'none'],
+        // The Quarantine Vault keeps exact copies of flagged files; scanning it would report them again.
+        [...cmd.args, 'scan', folder, '--format', 'json', '--fail-on', 'none', '--ignore', '.exorcist/vault'],
         { timeout: timeoutMs, maxBuffer: SCAN_MAX_OUTPUT, windowsHide: true, encoding: 'utf8' },
         (err, stdout, stderr) => {
           if (err) {

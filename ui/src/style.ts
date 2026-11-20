@@ -43,6 +43,16 @@ export const CSS = `
 .x98-finding dt { font-weight: 700; }
 .x98-finding dd { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .x98-span { background: #000; color: #39ff6a; padding: 1px 4px; font-family: "Courier New", monospace; }
+.x98-act { margin: 6px 0 2px; }
+.x98-confirm { background: #ffffe1; border: 2px solid #000; padding: 8px 10px; margin: 6px 0 2px; }
+.x98-confirm h4 { margin: 0 0 4px; font-size: 14px; }
+.x98-confirm p { margin: 4px 0; }
+.x98-confirm .x98-row { margin-top: 8px; }
+.x98-danger { font-weight: 700; }
+.x98-tag { font-weight: 700; font-size: 12px; border: 1px dashed #000; padding: 1px 6px; background: #fff; }
+.x98-vault { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.x98-vault li { background: #fff; border: 1px solid #808080; padding: 4px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.x98-vault code { font-family: "Courier New", monospace; word-break: break-all; flex: 1 1 200px; }
 @media (max-width: 600px) { .x98 { padding: 6px; } .x98-form { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .x98 * { transition: none !important; animation: none !important; } }
 `;

@@ -1,7 +1,7 @@
 // Real-browser check of the dashboard page through the stand-in gateway,
 // scanning the Haunted Repo with the real Exorcist 98 CLI.
 //   EXORCIST_CLI=... HAUNTED=... CHROME_PATH=... npm run e2e
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -121,6 +121,44 @@ await step('scanned markup is shown as text, never run', async () => {
   if (!allText?.includes('ignore previous instructions')) throw new Error('expected the quote as text');
 });
 await step('results page with an open finding: 0 axe violations', () => axe('results'));
+// Quarantine is tried on the temporary markup folder only, never on the Haunted Repo.
+const xssFile = join(xss, 'AGENTS.md');
+const xssBytes = readFileSync(xssFile);
+const xssCard = () => page.locator('article', { hasText: xss });
+await step('Move to vault asks first; Escape cancels and nothing moves', async () => {
+  const card = xssCard();
+  const finding = card.locator('details.x98-finding').first();
+  if (!(await finding.evaluate((d) => d.open))) await finding.locator('summary').click();
+  const open = finding.getByRole('button', { name: 'Move file to vault...' });
+  await open.click();
+  const box = finding.locator('.x98-confirm');
+  await expectText(box, /Move AGENTS\.md to the vault\?/);
+  const focused = await page.evaluate(() => document.activeElement?.textContent);
+  if (focused !== 'Cancel') throw new Error(`focus on ${focused}, expected Cancel`);
+  await page.keyboard.press('Escape');
+  if (await box.count() !== 0) throw new Error('confirm box still open');
+  if (!(await open.evaluate((el) => el === document.activeElement))) throw new Error('focus did not return to the button');
+  if (!existsSync(xssFile)) throw new Error('the file moved without confirming');
+});
+await step('confirm box: 0 axe violations', async () => {
+  await xssCard().getByRole('button', { name: 'Move file to vault...' }).first().click();
+  await page.screenshot({ path: join(OUT, '04-confirm.png'), fullPage: false });
+  await axe('confirm');
+});
+await step('after confirming, the file is in the vault and shown there', async () => {
+  await xssCard().getByRole('button', { name: 'Move to vault' }).click();
+  await expectText(live(), /Moved AGENTS\.md to the vault/, 30000);
+  if (existsSync(xssFile)) throw new Error('the file is still in the folder');
+  await expectText(xssCard().locator('.x98-vault li'), /AGENTS\.md/);
+  await expectText(xssCard().locator('.x98-tag'), /IN VAULT/);
+});
+await step('Restore asks first, then puts back the exact bytes', async () => {
+  await xssCard().getByRole('button', { name: 'Restore AGENTS.md' }).click();
+  await xssCard().getByRole('button', { name: 'Restore file' }).click();
+  await expectText(live(), /Restored AGENTS\.md/, 30000);
+  if (!readFileSync(xssFile).equals(xssBytes)) throw new Error('restored bytes differ');
+  if (await xssCard().locator('.x98-vault li').count() !== 0) throw new Error('still listed in the vault');
+});
 await step('a second patrol finds nothing new', async () => {
   await page.getByRole('button', { name: 'Run patrol now' }).click();
   await expectText(live(), /No new serious problems/, 60000);

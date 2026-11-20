@@ -6,14 +6,14 @@ var __export = (target, all) => {
 };
 
 // backend/src/main.ts
-import { existsSync as existsSync3, readFileSync as readFileSync5 } from "node:fs";
+import { existsSync as existsSync3, readFileSync as readFileSync6 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join4 } from "node:path";
+import { join as join5 } from "node:path";
 import { createServer as createHttpServer } from "node:http";
 
 // backend/src/server.ts
 import { statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute as isAbsolute2, resolve } from "node:path";
 
 // node_modules/zod/v3/external.js
 var external_exports = {};
@@ -4068,9 +4068,9 @@ function signProxy(secret2, timestamp, method, pathAndQuery, body) {
 }
 function verifyProxy(input) {
   if (!input.header) return false;
-  const sep = input.header.indexOf(":");
-  if (sep <= 0) return false;
-  const timestamp = input.header.slice(0, sep);
+  const sep2 = input.header.indexOf(":");
+  if (sep2 <= 0) return false;
+  const timestamp = input.header.slice(0, sep2);
   if (!/^\d{1,13}$/.test(timestamp)) return false;
   const ts = Number(timestamp);
   const seconds = ts > 1e11 ? ts / 1e3 : ts;
@@ -4078,6 +4078,66 @@ function verifyProxy(input) {
   const expected = Buffer.from(signProxy(input.secret, timestamp, input.method, input.pathAndQuery, input.body));
   const given = Buffer.from(input.header);
   return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+// shared/principal.ts
+import { createHash as createHash2, createHmac as createHmac2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
+var PRINCIPAL_KINDS = ["owner-session", "app-token", "agent-tool", "none"];
+var DOMAIN = "kirocrew-proxy-principal-v1";
+var MAX_SKEW_SECONDS = 60;
+var MAX_HEADER_BYTES = 4096;
+var MAX_OWNER_ID = 256;
+var KEYS = ["issuedAt", "kind", "ownerId", "requestId", "version"];
+var isRequestId = (v) => typeof v === "string" && /^[0-9a-f]{32}$/.test(v);
+function shapeOk(c) {
+  if (c["version"] !== 1) return false;
+  if (typeof c["kind"] !== "string" || !PRINCIPAL_KINDS.includes(c["kind"])) return false;
+  if (typeof c["issuedAt"] !== "number" || !Number.isSafeInteger(c["issuedAt"])) return false;
+  const owner = c["ownerId"];
+  if (typeof owner !== "string" || owner.length > MAX_OWNER_ID || /[\u0000-\u001f\u007f]/.test(owner)) return false;
+  if (c["kind"] === "owner-session" !== owner.length > 0) return false;
+  return isRequestId(c["requestId"]);
+}
+function signature(secret2, encoded, issuedAt, method, target, body) {
+  const message = [DOMAIN, String(issuedAt), method, target, createHash2("sha256").update(body).digest("hex"), encoded].join("\n");
+  return createHmac2("sha256", secret2).update(message).digest("hex");
+}
+var ReplayCache = class {
+  seen = /* @__PURE__ */ new Map();
+  max;
+  constructor(max = 4096) {
+    this.max = max;
+  }
+  accept(id, expiresAt, now) {
+    for (const [k, exp] of this.seen) if (exp < now) this.seen.delete(k);
+    if (this.seen.has(id) || this.seen.size >= this.max) return false;
+    this.seen.set(id, expiresAt);
+    return true;
+  }
+};
+function verifyPrincipal(o) {
+  const { header } = o;
+  if (!o.secret || !header || Buffer.byteLength(header, "utf8") > MAX_HEADER_BYTES) return null;
+  const dot = header.lastIndexOf(".");
+  if (dot <= 0 || dot === header.length - 1) return null;
+  const encoded = header.slice(0, dot);
+  const given = header.slice(dot + 1);
+  if (!/^[A-Za-z0-9_-]+$/.test(encoded)) return null;
+  let claim;
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    claim = parsed;
+  } catch {
+    return null;
+  }
+  if (Object.keys(claim).sort().join() !== KEYS.join() || !shapeOk(claim)) return null;
+  if (Math.abs(o.nowSeconds - claim.issuedAt) > MAX_SKEW_SECONDS) return null;
+  const expected = Buffer.from(signature(o.secret, encoded, claim.issuedAt, o.method, o.target, o.body), "utf8");
+  const got = Buffer.from(given, "utf8");
+  if (expected.length !== got.length || !timingSafeEqual2(expected, got)) return null;
+  if (!o.cache.accept(claim.requestId, claim.issuedAt + MAX_SKEW_SECONDS, o.nowSeconds)) return null;
+  return claim;
 }
 
 // shared/report.ts
@@ -4186,11 +4246,121 @@ function fileStore(dataDir2) {
   };
 }
 
+// backend/src/vault.ts
+import { execFile } from "node:child_process";
+import { lstatSync, readFileSync as readFileSync2, readdirSync, realpathSync } from "node:fs";
+import { isAbsolute, join as join2, relative, sep } from "node:path";
+var STATE_DIR = ".exorcist";
+var VAULT_SUBDIR = `${STATE_DIR}/vault`;
+var VAULT_TIMEOUT_MS = 3e4;
+var MAX_ENTRIES = 200;
+var VAULT_ID = /^\d{14}-[a-z0-9-]{1,30}-[0-9a-f]{4}$/;
+var EntrySchema = external_exports.object({
+  id: external_exports.string().regex(VAULT_ID),
+  kind: external_exports.enum(["mcp-server", "file"]),
+  target: external_exports.string(),
+  reason: external_exports.string(),
+  createdAt: external_exports.string(),
+  sha256: external_exports.string(),
+  status: external_exports.enum(["quarantined", "restored"])
+}).passthrough();
+function inside(root, path) {
+  const rel = relative(root, path);
+  return rel !== "" && !rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel) ? rel : null;
+}
+function listVault(folder) {
+  let root;
+  try {
+    root = realpathSync(folder);
+  } catch {
+    return [];
+  }
+  const dir = join2(root, VAULT_SUBDIR);
+  let names;
+  try {
+    if (!lstatSync(dir).isDirectory()) return [];
+    names = readdirSync(dir).filter((n) => VAULT_ID.test(n)).slice(0, MAX_ENTRIES);
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const name of names) {
+    const file = join2(dir, name, "manifest.json");
+    try {
+      if (!lstatSync(file).isFile()) continue;
+      const e = EntrySchema.safeParse(JSON.parse(readFileSync2(file, "utf8")));
+      if (!e.success || e.data.kind !== "file" || e.data.id !== name) continue;
+      const rel = inside(root, e.data.target);
+      if (rel === null) continue;
+      out.push({ id: e.data.id, file: rel.split(sep).join("/"), reason: e.data.reason.slice(0, 200), createdAt: e.data.createdAt, status: e.data.status });
+    } catch {
+    }
+  }
+  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+function checkQuarantineTarget(folder, file, reported) {
+  const no = (error) => ({ ok: false, error });
+  if (!reported.has(file)) return no("Only a file named in the last patrol of this folder can be moved to the vault.");
+  if (file === "" || isAbsolute(file) || file.split(/[\\/]/).some((s) => s === ".." || s === "")) return no("That is not a path inside the folder.");
+  if (file === STATE_DIR || file.startsWith(`${STATE_DIR}/`)) return no("Files in .exorcist belong to the Exorcist 98 Shield and vault, and are not moved.");
+  let root;
+  try {
+    root = realpathSync(folder);
+  } catch {
+    return no("The folder no longer exists.");
+  }
+  const abs = join2(root, file);
+  let st;
+  try {
+    st = lstatSync(abs);
+  } catch {
+    return no("The file is no longer there. Run a patrol to update the list.");
+  }
+  if (st.isSymbolicLink()) return no("The file is a symbolic link. It was not moved; remove the link by hand if you want it gone.");
+  if (!st.isFile()) return no("Only regular files can be moved to the vault.");
+  let real;
+  try {
+    real = realpathSync(abs);
+  } catch {
+    return no("The file could not be resolved.");
+  }
+  if (inside(root, real) === null) return no("The file resolves outside the watched folder, so it was not moved.");
+  return { ok: true, value: real };
+}
+function cliVault(cmd, timeoutMs = VAULT_TIMEOUT_MS) {
+  const run = (args) => new Promise((resolve2) => {
+    execFile(cmd.file, [...cmd.args, "vault", ...args], { timeout: timeoutMs, maxBuffer: 1024 * 1024, windowsHide: true, encoding: "utf8" }, (err, stdout, stderr) => {
+      if (err) {
+        const why = err.killed ? "The vault took too long and was stopped." : stderr.split("\n").map((l) => l.trim()).find(Boolean) ?? "The vault command failed.";
+        resolve2({ ok: false, error: why.slice(0, 300) });
+        return;
+      }
+      resolve2({ ok: true, value: stdout });
+    });
+  });
+  return {
+    async quarantine(folder, absFile, reason) {
+      const r = await run(["quarantine-file", absFile, "--dir", join2(realpathSync(folder), STATE_DIR), "--reason", reason]);
+      if (!r.ok) return r;
+      const id = /Vault entry: (\S+)/.exec(r.value)?.[1];
+      return id && VAULT_ID.test(id) ? { ok: true, value: id } : { ok: false, error: "The vault did not report an entry id." };
+    },
+    async restore(folder, id) {
+      if (!VAULT_ID.test(id)) return { ok: false, error: "That is not a vault entry id." };
+      const r = await run(["restore", id, "--dir", join2(realpathSync(folder), STATE_DIR)]);
+      return r.ok ? { ok: true, value: null } : r;
+    }
+  };
+}
+
 // backend/src/server.ts
 var APP_NAME = "exorcist-98-crew";
 var PREFIXES = [`/apps/${APP_NAME}/api`, "/api"];
 var MAX_BODY = 16 * 1024;
 var AddFolderSchema = external_exports.object({ path: external_exports.string().min(1).max(4096) }).strict();
+var QuarantineSchema = external_exports.object({ folder: external_exports.string().min(1).max(4096), file: external_exports.string().min(1).max(4096), confirm: external_exports.literal("move-to-vault") }).strict();
+var RestoreSchema = external_exports.object({ folder: external_exports.string().min(1).max(4096), id: external_exports.string().regex(VAULT_ID), confirm: external_exports.literal("restore-from-vault") }).strict();
+var ACTION_HEADER = "x-exorcist-action";
 function routeOf(pathname) {
   for (const p of PREFIXES) {
     if (pathname === p) return "/";
@@ -4199,7 +4369,7 @@ function routeOf(pathname) {
   return pathname;
 }
 function checkFolder(raw) {
-  if (!isAbsolute(raw)) return { ok: false, error: "Give the full path of a folder, starting from the root (for example /home/me/project)." };
+  if (!isAbsolute2(raw)) return { ok: false, error: "Give the full path of a folder, starting from the root (for example /home/me/project)." };
   const path = resolve(raw);
   if (path === resolve("/")) return { ok: false, error: "Scanning the whole disk is not allowed. Pick a project folder." };
   try {
@@ -4212,8 +4382,10 @@ function checkFolder(raw) {
 function createApp(deps) {
   const now = deps.now ?? (() => /* @__PURE__ */ new Date());
   let patrolRunning = false;
+  let vaultBusy = false;
+  const principals = new ReplayCache();
   async function runPatrol() {
-    if (patrolRunning) return null;
+    if (patrolRunning || vaultBusy) return null;
     patrolRunning = true;
     try {
       const summary = await patrol();
@@ -4272,11 +4444,14 @@ function createApp(deps) {
     return {
       lastPatrolAt: s.lastPatrolAt,
       patrolRunning,
+      // Whether this backend can move files at all; the gateway still decides who may.
+      vaultAvailable: Boolean(deps.vault) && deps.secret !== null,
       folders: s.folders.map((path) => {
         const r = s.results[path];
         return {
           path,
-          result: r ? { ...r, level: worstLevel(r.findings), counts: countBySeverity(r.findings) } : null
+          result: r ? { ...r, level: worstLevel(r.findings), counts: countBySeverity(r.findings) } : null,
+          vault: listVault(path)
         };
       })
     };
@@ -4327,6 +4502,61 @@ function createApp(deps) {
       res.writeHead(204).end();
       return;
     }
+    if ((route === "/quarantine" || route === "/restore") && method === "POST") {
+      if (!deps.vault || deps.secret === null) return send(res, 403, { error: "Moving files needs the Crew gateway and the Exorcist 98 CLI." });
+      if (req.headers[ACTION_HEADER] !== route.slice(1)) return send(res, 403, { error: "Use the Exorcist 98 page to do this." });
+      const p = req.headers["x-kirocrew-principal"];
+      const claim = verifyPrincipal({
+        secret: deps.secret,
+        header: Array.isArray(p) ? p[0] : p,
+        method,
+        target: req.url ?? "",
+        body,
+        nowSeconds: now().getTime() / 1e3,
+        cache: principals
+      });
+      if (!claim || claim.kind !== "owner-session") {
+        return send(res, 403, { error: "Only you, signed in to the Crew dashboard, can move files. Agents, schedules and other apps cannot." });
+      }
+      let json;
+      try {
+        json = JSON.parse(body);
+      } catch {
+        json = null;
+      }
+      const s = deps.store.read();
+      if (vaultBusy || patrolRunning) return send(res, 409, { error: "A patrol or another vault action is running. Try again in a moment." });
+      if (route === "/quarantine") {
+        const q = QuarantineSchema.safeParse(json);
+        if (!q.success) return send(res, 400, { error: "Confirm which file to move." });
+        if (!s.folders.includes(q.data.folder)) return send(res, 404, { error: "That folder is not being watched." });
+        const reported = new Set((s.results[q.data.folder]?.findings ?? []).map((f) => f.file));
+        const target = checkQuarantineTarget(q.data.folder, q.data.file, reported);
+        if (!target.ok) return send(res, 400, { error: target.error });
+        const rules = [...new Set((s.results[q.data.folder]?.findings ?? []).filter((f) => f.file === q.data.file).map((f) => f.ruleId))].slice(0, 10);
+        vaultBusy = true;
+        try {
+          const r2 = await deps.vault.quarantine(q.data.folder, target.value, `Exorcist 98 Crew: ${rules.join(", ") || "flagged by a patrol"}`);
+          if (!r2.ok) return send(res, 400, { error: r2.error });
+          return send(res, 200, { id: r2.value, file: q.data.file });
+        } finally {
+          vaultBusy = false;
+        }
+      }
+      const r = RestoreSchema.safeParse(json);
+      if (!r.success) return send(res, 400, { error: "Confirm which vault entry to restore." });
+      if (!s.folders.includes(r.data.folder)) return send(res, 404, { error: "That folder is not being watched." });
+      const entry = listVault(r.data.folder).find((e) => e.id === r.data.id);
+      if (!entry || entry.status !== "quarantined") return send(res, 404, { error: "That file is not in this folder's vault." });
+      vaultBusy = true;
+      try {
+        const out = await deps.vault.restore(r.data.folder, r.data.id);
+        if (!out.ok) return send(res, 400, { error: out.error });
+        return send(res, 200, { id: r.data.id, file: entry.file });
+      } finally {
+        vaultBusy = false;
+      }
+    }
     if (route === "/patrol" && method === "POST") {
       const summary = await runPatrol();
       if (summary === null) return send(res, 409, { error: "A patrol is already running." });
@@ -4364,8 +4594,8 @@ function send(res, status, body) {
 }
 
 // backend/src/scanner.ts
-import { execFile } from "node:child_process";
-import { existsSync, readFileSync as readFileSync2 } from "node:fs";
+import { execFile as execFile2 } from "node:child_process";
+import { existsSync, readFileSync as readFileSync3 } from "node:fs";
 var SCAN_TIMEOUT_MS = 12e4;
 var SCAN_MAX_OUTPUT = 20 * 1024 * 1024;
 var NO_SCANNER_ERROR = `No Exorcist 98 scanner is set up. Set EXORCIST_CLI, or "cliPath" in the app's data/config.json, to the CLI's index.mjs.`;
@@ -4375,7 +4605,7 @@ function resolveScannerCommand(env2, configFiles2) {
   for (const configFile of typeof configFiles2 === "string" ? [configFiles2] : configFiles2) {
     if (cliPath || !existsSync(configFile)) continue;
     try {
-      const parsed = ConfigSchema.safeParse(JSON.parse(readFileSync2(configFile, "utf8")));
+      const parsed = ConfigSchema.safeParse(JSON.parse(readFileSync3(configFile, "utf8")));
       if (parsed.success) cliPath = parsed.data.cliPath;
     } catch {
     }
@@ -4385,9 +4615,10 @@ function resolveScannerCommand(env2, configFiles2) {
 var missingScanner = async () => ({ ok: false, error: NO_SCANNER_ERROR });
 function cliScanner(cmd, timeoutMs = SCAN_TIMEOUT_MS) {
   return (folder) => new Promise((resolvePromise) => {
-    execFile(
+    execFile2(
       cmd.file,
-      [...cmd.args, "scan", folder, "--format", "json", "--fail-on", "none"],
+      // The Quarantine Vault keeps exact copies of flagged files; scanning it would report them again.
+      [...cmd.args, "scan", folder, "--format", "json", "--fail-on", "none", "--ignore", ".exorcist/vault"],
       { timeout: timeoutMs, maxBuffer: SCAN_MAX_OUTPUT, windowsHide: true, encoding: "utf8" },
       (err, stdout, stderr) => {
         if (err) {
@@ -4405,8 +4636,8 @@ function firstLine(s) {
 }
 
 // backend/src/pins.ts
-import { lstatSync, readFileSync as readFileSync3 } from "node:fs";
-import { join as join2 } from "node:path";
+import { lstatSync as lstatSync2, readFileSync as readFileSync4 } from "node:fs";
+import { join as join3 } from "node:path";
 
 // shared/pins.ts
 var PIN_FILE = ".exorcist/pins.json";
@@ -4473,10 +4704,10 @@ function pinFindings(text) {
 
 // backend/src/pins.ts
 function readPinFile(folder) {
-  const path = join2(folder, PIN_FILE);
+  const path = join3(folder, PIN_FILE);
   let st;
   try {
-    st = lstatSync(path);
+    st = lstatSync2(path);
   } catch {
     return [];
   }
@@ -4495,7 +4726,7 @@ function readPinFile(folder) {
   if (st.size > MAX_PIN_FILE_BYTES) return refuse(`The pin file is larger than ${MAX_PIN_FILE_BYTES / 1024 / 1024} MB; it was not read.`);
   let text;
   try {
-    text = readFileSync3(path, "utf8");
+    text = readFileSync4(path, "utf8");
   } catch {
     return refuse("The pin file could not be read.");
   }
@@ -4512,18 +4743,18 @@ function withPinWatch(scanner, readPins = readPinFile) {
 }
 
 // backend/src/secret.ts
-import { existsSync as existsSync2, readFileSync as readFileSync4 } from "node:fs";
+import { existsSync as existsSync2, readFileSync as readFileSync5 } from "node:fs";
 import { homedir } from "node:os";
-import { join as join3 } from "node:path";
+import { join as join4 } from "node:path";
 function readSecret(env2, appName, home = homedir()) {
   for (const key of ["EXORCIST_CREW_SECRET", "KIROCREW_PROXY_SECRET"]) {
     const v = env2[key]?.trim();
     if (v) return v;
   }
-  const crewHome = env2["KIROCREW_HOME"] || join3(home, ".kiro", "crew");
-  const file = join3(crewHome, "apps", appName, ".app_secret");
+  const crewHome = env2["KIROCREW_HOME"] || join4(home, ".kiro", "crew");
+  const file = join4(crewHome, "apps", appName, ".app_secret");
   if (!existsSync2(file)) return null;
-  const s = readFileSync4(file, "utf8").trim();
+  const s = readFileSync5(file, "utf8").trim();
   return s.length > 0 ? s : null;
 }
 
@@ -4617,16 +4848,16 @@ function scheduleNightly(run, at2, now = () => /* @__PURE__ */ new Date(), timer
 
 // backend/src/main.ts
 var env = process.env;
-var crewData = env["KIROCREW_HOME"] ? join4(env["KIROCREW_HOME"], "apps", APP_NAME, "data") : null;
-var dataDir = env["EXORCIST_CREW_DATA"] ?? (crewData && existsSync3(crewData) ? crewData : join4(homedir2(), ".exorcist-98-crew"));
+var crewData = env["KIROCREW_HOME"] ? join5(env["KIROCREW_HOME"], "apps", APP_NAME, "data") : null;
+var dataDir = env["EXORCIST_CREW_DATA"] ?? (crewData && existsSync3(crewData) ? crewData : join5(homedir2(), ".exorcist-98-crew"));
 var port = Number(env["PORT"] ?? 4598);
 var secret = readSecret(env, APP_NAME);
-var configFiles = [join4(dataDir, "config.json"), join4(homedir2(), ".exorcist-98-crew", "config.json")];
+var configFiles = [join5(dataDir, "config.json"), join5(homedir2(), ".exorcist-98-crew", "config.json")];
 var command = resolveScannerCommand(env, configFiles);
 function configPatrolTime() {
   for (const f of configFiles) {
     try {
-      const v = JSON.parse(readFileSync5(f, "utf8")).patrolTime;
+      const v = JSON.parse(readFileSync6(f, "utf8")).patrolTime;
       if (typeof v === "string") return v;
     } catch {
     }
@@ -4639,6 +4870,8 @@ var app = createApp({
   store: fileStore(dataDir),
   // The Exorcist 98 scan, plus the MCP rug-pull watch on each folder's Shield pin file.
   scanner: withPinWatch(command ? cliScanner(command) : missingScanner),
+  // The main repo's Quarantine Vault, through the same CLI. Only the owner can use it (server.ts).
+  vault: command ? cliVault(command) : null,
   secret,
   onPatrol: async (summary) => {
     const notice = noticeFor(summary, APP_NAME);

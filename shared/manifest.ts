@@ -73,6 +73,8 @@ export const ManifestSchema = z
         port: z.union([z.literal('auto'), z.number().int().positive()]).optional(),
         healthCheck: nonEmpty.optional(),
         routes: nonEmpty.optional(),
+        // Crew 0.13.0: the gateway signs who sent each request (X-KiroCrew-Principal).
+        signedPrincipal: z.boolean().optional(),
       })
       .passthrough()
       .optional(),

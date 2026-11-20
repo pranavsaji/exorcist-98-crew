@@ -47,7 +47,7 @@ describe('REQ-02.2-3 running the scanner', () => {
     const out = report([{ ruleId: 'EX-001', title: 't', severity: 'critical', file: 'a.md', line: 1, col: 2, span: 's', fix: 'f' }], 5);
     const cli = fakeCli(`
       const args = process.argv.slice(2);
-      if (JSON.stringify(args.slice(0,1).concat(args.slice(2))) !== JSON.stringify(['scan','--format','json','--fail-on','none'])) { console.error('bad args ' + JSON.stringify(args)); process.exit(2); }
+      if (JSON.stringify(args.slice(0,1).concat(args.slice(2))) !== JSON.stringify(['scan','--format','json','--fail-on','none','--ignore','.exorcist/vault'])) { console.error('bad args ' + JSON.stringify(args)); process.exit(2); }
       process.stdout.write(${JSON.stringify(out)});
     `);
     const r = await cliScanner({ file: process.execPath, args: [cli] })('/some folder; rm -rf ~');

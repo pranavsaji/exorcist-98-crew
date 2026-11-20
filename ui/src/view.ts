@@ -17,9 +17,18 @@ const LevelSchema = z.enum(['clean', ...SEVERITIES]);
 const CountsSchema = z.object({ critical: z.number(), high: z.number(), medium: z.number(), low: z.number() });
 
 /** `GET /status`, validated before anything is shown. */
+const VaultItemSchema = z.object({
+  id: z.string(),
+  file: z.string(),
+  reason: z.string(),
+  createdAt: z.string(),
+  status: z.enum(['quarantined', 'restored']),
+});
+export type VaultItem = z.infer<typeof VaultItemSchema>;
 export const StatusSchema = z.object({
   lastPatrolAt: z.string().nullable(),
   patrolRunning: z.boolean(),
+  vaultAvailable: z.boolean().optional(),
   folders: z.array(
     z.object({
       path: z.string(),
@@ -36,9 +45,14 @@ export const StatusSchema = z.object({
           counts: CountsSchema,
         })
         .nullable(),
+      vault: z.array(VaultItemSchema).optional(),
     }),
   ),
 });
+/** Whether the page offers "Move file to vault" for a finding's file. */
+export function canQuarantine(file: string, inVault: ReadonlySet<string>): boolean {
+  return file !== '' && file !== '.exorcist' && !file.startsWith('.exorcist/') && !inVault.has(file);
+}
 export type Status = z.infer<typeof StatusSchema>;
 
 const HIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\u3164\uFE00-\uFE0F\uFEFF\uFFA0]|\uDB40[\uDC00-\uDDEF]/g;

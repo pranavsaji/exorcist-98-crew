@@ -5,6 +5,7 @@ import { createServer as createHttpServer } from 'node:http';
 import { APP_NAME, createApp } from './server.js';
 import { cliScanner, missingScanner, resolveScannerCommand } from './scanner.js';
 import { withPinWatch } from './pins.js';
+import { cliVault } from './vault.js';
 import { fileStore } from './store.js';
 import { readSecret } from './secret.js';
 import { gatewayNotifier, noticeFor } from './notify.js';
@@ -42,6 +43,8 @@ const app = createApp({
   store: fileStore(dataDir),
   // The Exorcist 98 scan, plus the MCP rug-pull watch on each folder's Shield pin file.
   scanner: withPinWatch(command ? cliScanner(command) : missingScanner),
+  // The main repo's Quarantine Vault, through the same CLI. Only the owner can use it (server.ts).
+  vault: command ? cliVault(command) : null,
   secret,
   onPatrol: async (summary) => {
     const notice = noticeFor(summary, APP_NAME);

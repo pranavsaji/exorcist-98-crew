@@ -1,7 +1,7 @@
 import { plainSummary } from '../../shared/report.js';
 import type { Finding, Level } from '../../shared/report.js';
-import { LEVELS, StatusSchema, countsText, formatWhen, revealHidden } from './view.js';
-import type { Shape, Status } from './view.js';
+import { LEVELS, StatusSchema, canQuarantine, countsText, formatWhen, revealHidden } from './view.js';
+import type { Shape, Status, VaultItem } from './view.js';
 import { CSS } from './style.js';
 
 export type MountOptions = { apiBase?: string };
@@ -54,7 +54,27 @@ function badge(level: Level): HTMLElement {
   return el;
 }
 
-function findingRow(f: Finding): HTMLElement {
+/**
+ * An inline "are you sure" box. Focus goes to Cancel, the safe choice; Escape
+ * cancels and puts focus back on the button that opened it.
+ */
+function confirmBox(o: { title: string; lines: string[]; confirmLabel: string; opener: HTMLElement; onConfirm: () => void }): HTMLElement {
+  const id = `x98-c-${Math.random().toString(36).slice(2, 9)}`;
+  const yes = h('button', { type: 'button', class: 'x98-btn x98-danger' }, o.confirmLabel) as HTMLButtonElement;
+  const no = h('button', { type: 'button', class: 'x98-btn' }, 'Cancel') as HTMLButtonElement;
+  const box = h('div', { class: 'x98-confirm', role: 'group', 'aria-labelledby': id },
+    h('h4', { id }, o.title), ...o.lines.map((l) => h('p', {}, l)), h('div', { class: 'x98-row' }, yes, no));
+  const close = () => { box.remove(); o.opener.removeAttribute('aria-expanded'); o.opener.focus(); };
+  no.addEventListener('click', close);
+  box.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
+  yes.addEventListener('click', () => { yes.disabled = true; no.disabled = true; o.onConfirm(); });
+  queueMicrotask(() => no.focus());
+  return box;
+}
+
+type RowContext = { folder: string; inVault: ReadonlySet<string>; vaultAvailable: boolean; quarantine: (folder: string, file: string) => Promise<void> };
+
+function findingRow(f: Finding, ctx?: RowContext): HTMLElement {
   const summary = h(
     'summary',
     {},
@@ -63,7 +83,28 @@ function findingRow(f: Finding): HTMLElement {
     h('span', { class: 'x98-title' }, f.title),
     ' ',
     h('span', { class: 'x98-loc' }, `${f.file}:${f.line}:${f.col}`),
+    ctx?.inVault.has(f.file) ? h('span', { class: 'x98-tag' }, 'IN VAULT') : null,
   );
+  let action: HTMLElement | null = null;
+  if (ctx && ctx.vaultAvailable && canQuarantine(f.file, ctx.inVault)) {
+    const open = h('button', { type: 'button', class: 'x98-btn x98-small' }, 'Move file to vault...') as HTMLButtonElement;
+    action = h('div', { class: 'x98-act' }, open);
+    open.addEventListener('click', () => {
+      if (action?.querySelector('.x98-confirm')) return;
+      open.setAttribute('aria-expanded', 'true');
+      action?.append(confirmBox({
+        title: `Move ${f.file} to the vault?`,
+        lines: [
+          `It is removed from ${ctx.folder} and an exact copy is kept in .exorcist/vault inside that folder.`,
+          'Anything that reads this file (Kiro, your agents, your build) will no longer find it.',
+          'You can put it back with Restore in the vault list below this folder.',
+        ],
+        confirmLabel: 'Move to vault',
+        opener: open,
+        onConfirm: () => { void ctx.quarantine(ctx.folder, f.file); },
+      }));
+    });
+  }
   return h(
     'li',
     {},
@@ -79,6 +120,7 @@ function findingRow(f: Finding): HTMLElement {
         h('dt', {}, 'Threat'), h('dd', {}, `${f.title} (${f.ruleId}), ${LEVELS[f.severity].label}`),
         h('dt', {}, 'How to fix it'), h('dd', {}, f.fix.trim()),
       ),
+      action,
     ),
   );
 }
@@ -130,11 +172,11 @@ export function mount(target: HTMLElement, options: MountOptions = {}): () => vo
 
   const say = (msg: string) => { live.textContent = msg; };
 
-  async function call(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
-    const init: RequestInit = { method, headers: { accept: 'application/json' } };
+  async function call(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<{ status: number; json: unknown }> {
+    const init: RequestInit = { method, headers: { accept: 'application/json', ...extra } };
     if (body !== undefined) {
       init.body = JSON.stringify(body);
-      init.headers = { accept: 'application/json', 'content-type': 'application/json' };
+      init.headers = { accept: 'application/json', 'content-type': 'application/json', ...extra };
     }
     const res = await fetch(`${api}${path}`, init);
     const text = await res.text();
@@ -169,7 +211,15 @@ export function mount(target: HTMLElement, options: MountOptions = {}): () => vo
           r ? badge(r.level) : h('span', { class: 'x98-pending' }, 'NOT SCANNED YET'),
           remove,
         );
-        if (!r) return h('article', { class: 'x98-folder' }, head);
+        const vault = (folder.vault ?? []).filter((e) => e.status === 'quarantined');
+        const inVault = new Set(vault.map((e) => e.file));
+        const vaultList = vault.length > 0 && h(
+          'section',
+          { 'aria-label': `Vault of ${folder.path}` },
+          h('h4', {}, `In the vault (${vault.length})`),
+          h('ul', { class: 'x98-vault' }, ...vault.map((e) => vaultRow(folder.path, e))),
+        );
+        if (!r) return h('article', { class: 'x98-folder' }, head, vaultList);
         const lines: Child[] = [
           h('p', {}, `${plainSummary(r.findings)} Scanned ${r.filesScanned} file${r.filesScanned === 1 ? '' : 's'} ${formatWhen(r.ranAt)} (${countsText(r.counts)}${r.newCount > 0 ? `, ${r.newCount} new` : ''}).`),
           !r.ok && h('p', { class: 'x98-error', role: 'alert' }, `The last scan failed: ${r.error ?? 'unknown error'}. The findings below are from the scan before.`),
@@ -180,12 +230,54 @@ export function mount(target: HTMLElement, options: MountOptions = {}): () => vo
           { class: 'x98-folder' },
           head,
           ...lines,
-          r.findings.length > 0 && h('ul', { class: 'x98-findings', 'aria-label': `Findings in ${folder.path}` }, ...r.findings.map(findingRow)),
+          r.findings.length > 0 && h('ul', { class: 'x98-findings', 'aria-label': `Findings in ${folder.path}` },
+            ...r.findings.map((f) => findingRow(f, { folder: folder.path, inVault, vaultAvailable: status?.vaultAvailable === true, quarantine }))),
+          vaultList,
         );
       }),
     );
   }
 
+  function vaultRow(folder: string, e: VaultItem): HTMLElement {
+    const open = h('button', { type: 'button', class: 'x98-btn x98-small', 'aria-label': `Restore ${e.file}` }, 'Restore...') as HTMLButtonElement;
+    const li = h('li', {}, h('code', {}, e.file), h('span', {}, `moved ${formatWhen(e.createdAt)}`), open);
+    if (status?.vaultAvailable !== true) open.disabled = true;
+    open.addEventListener('click', () => {
+      if (li.querySelector('.x98-confirm')) return;
+      open.setAttribute('aria-expanded', 'true');
+      li.append(confirmBox({
+        title: `Put ${e.file} back?`,
+        lines: [
+          `A patrol flagged this file (${e.reason}).`,
+          'Once it is back, Kiro, your agents and your build will read it again.',
+        ],
+        confirmLabel: 'Restore file',
+        opener: open,
+        onConfirm: () => { void restore(folder, e); },
+      }));
+    });
+    return li;
+  }
+  async function quarantine(folder: string, file: string): Promise<void> {
+    say(`Moving ${file} to the vault...`);
+    try {
+      const { status: code, json } = await call('POST', '/quarantine', { folder, file, confirm: 'move-to-vault' }, { 'x-exorcist-action': 'quarantine' });
+      say(code === 200 ? `Moved ${file} to the vault. Run a patrol to update the findings.` : errorOf(json, `Could not move the file (HTTP ${code}).`));
+    } catch {
+      say('Could not reach the patrol service.');
+    }
+    await refresh();
+  }
+  async function restore(folder: string, e: VaultItem): Promise<void> {
+    say(`Restoring ${e.file}...`);
+    try {
+      const { status: code, json } = await call('POST', '/restore', { folder, id: e.id, confirm: 'restore-from-vault' }, { 'x-exorcist-action': 'restore' });
+      say(code === 200 ? `Restored ${e.file}. The next patrol will scan it again.` : errorOf(json, `Could not restore the file (HTTP ${code}).`));
+    } catch {
+      say('Could not reach the patrol service.');
+    }
+    await refresh();
+  }
   async function refresh(): Promise<void> {
     try {
       const { status: code, json } = await call('GET', '/status');

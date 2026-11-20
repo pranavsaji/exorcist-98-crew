@@ -20,6 +20,7 @@ Companion to the Kiroween 2026 entry
 | **Exorcist Sentry agent** (cron `nightly-patrol`, paused) | Summarises the latest patrol on request. It never starts a scan and never sees the scanned text (see below). The cron is paused because in Crew 0.12.2 an agent has no token for the app's API. |
 | **Agent-hygiene skill**                           | Safe habits for any Crew agent that reads repos or uses MCP servers.                                                                                                                        |
 | **MCP rug-pull watch** (every patrol) | Reads each folder's Exorcist 98 Shield pin file (`.exorcist/pins.json`) and reports every MCP tool the Shield is holding back because its description changed after it was pinned (critical, EX-006). Read-only: approving stays with `exorcist approve tool`. |
+| **Quarantine** (on the page, asks first) | "Move file to vault..." on a finding moves that file into `.exorcist/vault` inside the folder, through the Exorcist 98 Quarantine Vault (exact copy and sha256). "Restore..." puts back the exact bytes. Only you, signed in to the dashboard, can do it: the gateway signs who sent each request, and agents, schedules, MCP tools and other apps are refused. Only files named by the last patrol can be moved; never symlinks or `.exorcist` files. |
 | **Backend**                                       | Keeps the folder list, runs the scanner and the rug-pull watch, diffs against the last patrol.                                                                                                                     |
 
 ### Screenshots
@@ -32,6 +33,10 @@ from the main repo:
 A changed MCP tool reported from the Shield's pin file:
 
 ![Rug-pull finding with quoted text and fix](docs/media/rug-pull-finding.png)
+
+Moving a flagged file to the vault asks first:
+
+![Confirm box before a file moves to the vault](docs/media/quarantine-confirm.png)
 
 A 17-second clip of a patrol: [`docs/media/patrol-clip.mp4`](docs/media/patrol-clip.mp4).
 
@@ -100,7 +105,7 @@ backend with `X-Crew-Proxy`. It is a test harness, not Crew.
 Run inside Kiro Crew 0.12.2 and 0.13.0 on macOS (2026-11-18 and 19): the app installs,
 enables, patrols the Haunted Repo through the gateway proxy, shows its page in
 the signed-in dashboard, and sends a Crew notification for new serious
-findings. 127 tests pass, and the page passes a 16-step Chrome run with 0 axe
+findings. 140 tests pass, and the page passes a 20-step Chrome run with 0 axe
 violations through the stand-in gateway.
 
 With a Kiro sign-in, the Sentry agent answers in chat and the agent cron runs.

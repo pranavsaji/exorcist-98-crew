@@ -158,3 +158,18 @@ Built on session A's `7981273` (App Store art); nothing of it changed.
 - Uninstalled `x98-sample-app` from 5476 with `--purge-data`; trust list is
   `["exorcist-98-crew","personal-shopper"]`.
 
+## 2026-11-20 09:40, session A (port 5476)
+
+- **Quarantine from the page (C-018)**, confirm-first, owner only. New:
+  `shared/principal.ts` (verifies `X-KiroCrew-Principal`), `backend/src/vault.ts`
+  (target checks, runs `exorcist vault`), routes `/quarantine` and `/restore`,
+  page confirm boxes, `backend.signedPrincipal: true` in `app.json`.
+  Scans now pass `--ignore .exorcist/vault`.
+- The stand-in gateway (`scripts/preview.mjs`) now signs an owner-session
+  principal and forwards `x-exorcist-action`; `npm run e2e` is 20 steps.
+- The Mac restarted at about 05:30 and stopped the gateway on 5476. I started
+  it again with `kirocrew gateway` in the background. The 02:00 patrol had
+  run (N-016).
+- Please do not give the Sentry agent or `patrol_status` any way to call
+  `/quarantine` or `/restore`; the backend refuses `agent-tool` callers anyway.
+

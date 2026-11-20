@@ -31,6 +31,15 @@ function sign(secret, method, pathAndQuery, body) {
   return `${ts}:${mac}`;
 }
 
+// The owner-session claim Crew 0.13.0 adds for an app with backend.signedPrincipal
+// (see shared/principal.ts). The stand-in always acts as the signed-in owner.
+function principal(secret, method, target, body) {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const json = `{"issuedAt":${issuedAt},"kind":"owner-session","ownerId":"preview-owner","requestId":"${randomBytes(16).toString('hex')}","version":1}`;
+  const encoded = Buffer.from(json, 'utf8').toString('base64url');
+  const message = ['kirocrew-proxy-principal-v1', String(issuedAt), method, target, createHash('sha256').update(body).digest('hex'), encoded].join('\n');
+  return `${encoded}.${createHmac('sha256', secret).update(message).digest('hex')}`;
+}
 export async function startPreview({ port = 5480, backendPort = 5481, cli = process.env.EXORCIST_CLI } = {}) {
   const secret = randomBytes(24).toString('hex');
   const data = mkdtempSync(join(tmpdir(), 'x98-crew-preview-'));
@@ -67,7 +76,12 @@ export async function startPreview({ port = 5480, backendPort = 5481, cli = proc
       req.on('end', () => {
         const body = Buffer.concat(chunks).toString('utf8');
         const path = `${url.pathname}${url.search}`;
-        const headers = { 'content-type': req.headers['content-type'] ?? 'application/json', 'x-crew-proxy': sign(secret, req.method, path, body) };
+        const headers = {
+          'content-type': req.headers['content-type'] ?? 'application/json',
+          'x-crew-proxy': sign(secret, req.method, path, body),
+          'x-kirocrew-principal': principal(secret, req.method, path, body),
+        };
+        if (typeof req.headers['x-exorcist-action'] === 'string') headers['x-exorcist-action'] = req.headers['x-exorcist-action'];
         const out = request({ host: '127.0.0.1', port: backendPort, path, method: req.method, headers }, (r) => {
           res.writeHead(r.statusCode ?? 502, r.headers);
           r.pipe(res);
