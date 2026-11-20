@@ -4191,19 +4191,19 @@ function sortFindings(findings) {
 function findingKey(f) {
   return JSON.stringify([f.ruleId, f.file, f.line, f.span]);
 }
-function newFindings(previous, current) {
-  const seen = new Set(previous.map(findingKey));
-  return current.filter((f) => !seen.has(findingKey(f)));
-}
 function forAgent(f) {
   return { ruleId: f.ruleId, title: f.title, severity: f.severity, file: f.file, line: f.line };
 }
+
+// backend/src/server.ts
+import { createHash as createHash3 } from "node:crypto";
 
 // backend/src/store.ts
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 var MAX_FOLDERS = 20;
 var MAX_STORED_FINDINGS = 500;
+var MAX_SEEN_KEYS = 5e4;
 var FolderResultSchema = external_exports.object({
   ranAt: external_exports.string(),
   ok: external_exports.boolean(),
@@ -4211,7 +4211,8 @@ var FolderResultSchema = external_exports.object({
   filesScanned: external_exports.number().int().nonnegative(),
   findingsTotal: external_exports.number().int().nonnegative(),
   findings: external_exports.array(FindingSchema),
-  newCount: external_exports.number().int().nonnegative()
+  newCount: external_exports.number().int().nonnegative(),
+  seen: external_exports.array(external_exports.string()).optional()
 });
 var StateSchema = external_exports.object({
   version: external_exports.literal(1),
@@ -4379,6 +4380,10 @@ function checkFolder(raw) {
   }
   return { ok: true, path };
 }
+var DEFAULT_PATROL_BUDGET_MS = 20 * 6e4;
+function findingHash(f) {
+  return createHash3("sha256").update(findingKey(f)).digest("hex").slice(0, 16);
+}
 function createApp(deps) {
   const now = deps.now ?? (() => /* @__PURE__ */ new Date());
   let patrolRunning = false;
@@ -4397,11 +4402,19 @@ function createApp(deps) {
   }
   async function patrol() {
     const ranAt = now().toISOString();
+    const started = now().getTime();
+    const budget = deps.patrolBudgetMs ?? DEFAULT_PATROL_BUDGET_MS;
     const state = deps.store.read();
     const summary = { ranAt, folders: [], newSeriousTotal: 0 };
     for (const path of state.folders) {
-      const outcome = await deps.scanner(path);
       const prev = state.results[path];
+      if (now().getTime() - started > budget) {
+        const error = `Not scanned this time: the patrol reached its ${Math.round(budget / 6e4)}-minute limit. It will be scanned next time.`;
+        if (prev) state.results[path] = { ...prev, ranAt, ok: false, error, newCount: 0 };
+        summary.folders.push({ path, ok: false, error, level: "clean", counts: countBySeverity([]), newSerious: [] });
+        continue;
+      }
+      const outcome = await deps.scanner(path);
       if (!outcome.ok) {
         state.results[path] = {
           ranAt,
@@ -4410,13 +4423,15 @@ function createApp(deps) {
           filesScanned: 0,
           findingsTotal: prev?.findingsTotal ?? 0,
           findings: prev?.findings ?? [],
-          newCount: 0
+          newCount: 0,
+          ...prev?.seen ? { seen: prev.seen } : {}
         };
         summary.folders.push({ path, ok: false, error: outcome.error, level: "clean", counts: countBySeverity([]), newSerious: [] });
         continue;
       }
       const findings = outcome.value.findings;
-      const fresh = newFindings(prev?.findings ?? [], findings);
+      const before = new Set(prev?.seen ?? (prev?.findings ?? []).map(findingHash));
+      const fresh = findings.filter((f) => !before.has(findingHash(f)));
       const newSerious = sortFindings(fresh.filter((f) => f.severity === "critical" || f.severity === "high")).map(forAgent);
       const result = {
         ranAt,
@@ -4424,7 +4439,8 @@ function createApp(deps) {
         filesScanned: outcome.value.filesScanned,
         findingsTotal: findings.length,
         findings: sortFindings(findings).slice(0, MAX_STORED_FINDINGS),
-        newCount: fresh.length
+        newCount: fresh.length,
+        seen: [...new Set(findings.map(findingHash))].slice(0, MAX_SEEN_KEYS)
       };
       state.results[path] = result;
       summary.folders.push({ path, ok: true, level: worstLevel(findings), counts: countBySeverity(findings), newSerious });
@@ -4450,7 +4466,8 @@ function createApp(deps) {
         const r = s.results[path];
         return {
           path,
-          result: r ? { ...r, level: worstLevel(r.findings), counts: countBySeverity(r.findings) } : null,
+          // `seen` is for patrol diffs only; the page does not need it.
+          result: r ? (({ seen: _seen, ...rest }) => ({ ...rest, level: worstLevel(r.findings), counts: countBySeverity(r.findings) }))(r) : null,
           vault: listVault(path)
         };
       })

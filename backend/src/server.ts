@@ -5,9 +5,10 @@ import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
 import { verifyProxy } from '../../shared/hmac.js';
 import { ReplayCache, verifyPrincipal } from '../../shared/principal.js';
-import { countBySeverity, forAgent, newFindings, sortFindings, worstLevel } from '../../shared/report.js';
-import type { AgentFinding, Level, Severity } from '../../shared/report.js';
-import { MAX_FOLDERS, MAX_STORED_FINDINGS } from './store.js';
+import { countBySeverity, findingKey, forAgent, sortFindings, worstLevel } from '../../shared/report.js';
+import type { AgentFinding, Finding, Level, Severity } from '../../shared/report.js';
+import { createHash } from 'node:crypto';
+import { MAX_FOLDERS, MAX_SEEN_KEYS, MAX_STORED_FINDINGS } from './store.js';
 import type { FolderResult, Store } from './store.js';
 import type { Scanner } from './scanner.js';
 import { checkQuarantineTarget, listVault, VAULT_ID } from './vault.js';
@@ -23,6 +24,8 @@ export type Deps = {
   /** The gateway's app secret. When set, every request must be signed. */
   secret: string | null;
   now?: () => Date;
+  /** Time one patrol may take over all folders (C-013). Default 20 minutes. */
+  patrolBudgetMs?: number;
   /** Called after each patrol that finished (HTTP or scheduled). Must not throw. */
   onPatrol?: (summary: PatrolSummary) => Promise<void>;
   /** The Quarantine Vault. Without it, quarantine and restore are refused. */
@@ -77,6 +80,12 @@ export type App = {
   runPatrol: () => Promise<PatrolSummary | null>;
 };
 
+export const DEFAULT_PATROL_BUDGET_MS = 20 * 60_000;
+/** A short, fixed-size identity for a finding (rule, file, line, quoted span). */
+export function findingHash(f: Pick<Finding, 'ruleId' | 'file' | 'line' | 'span'>): string {
+  return createHash('sha256').update(findingKey(f)).digest('hex').slice(0, 16);
+}
+
 export function createHandler(deps: Deps): (req: IncomingMessage, res: ServerResponse) => void {
   return createApp(deps).handler;
 }
@@ -102,28 +111,42 @@ export function createApp(deps: Deps): App {
 
   async function patrol(): Promise<PatrolSummary> {
     const ranAt = now().toISOString();
+    const started = now().getTime();
+    const budget = deps.patrolBudgetMs ?? DEFAULT_PATROL_BUDGET_MS;
     const state = deps.store.read();
     const summary: PatrolSummary = { ranAt, folders: [], newSeriousTotal: 0 };
     for (const path of state.folders) {
-      const outcome = await deps.scanner(path);
       const prev = state.results[path];
+      // C-013: past the budget, the rest wait for the next patrol. Never "clean".
+      if (now().getTime() - started > budget) {
+        const error = `Not scanned this time: the patrol reached its ${Math.round(budget / 60000)}-minute limit. It will be scanned next time.`;
+        if (prev) state.results[path] = { ...prev, ranAt, ok: false, error, newCount: 0 };
+        summary.folders.push({ path, ok: false, error, level: 'clean', counts: countBySeverity([]), newSerious: [] });
+        continue;
+      }
+      const outcome = await deps.scanner(path);
       if (!outcome.ok) {
         // Keep the last good findings on screen, but mark this run as failed.
         state.results[path] = {
           ranAt, ok: false, error: outcome.error,
           filesScanned: 0, findingsTotal: prev?.findingsTotal ?? 0,
           findings: prev?.findings ?? [], newCount: 0,
+          ...(prev?.seen ? { seen: prev.seen } : {}),
         };
         summary.folders.push({ path, ok: false, error: outcome.error, level: 'clean', counts: countBySeverity([]), newSerious: [] });
         continue;
       }
       const findings = outcome.value.findings;
       // A folder's first patrol has no baseline, so everything counts as new.
-      const fresh = newFindings(prev?.findings ?? [], findings);
+      // C-010: compare against every finding of the last patrol, not only the
+      // 500 stored for the page.
+      const before = new Set(prev?.seen ?? (prev?.findings ?? []).map(findingHash));
+      const fresh = findings.filter((f) => !before.has(findingHash(f)));
       const newSerious = sortFindings(fresh.filter((f) => f.severity === 'critical' || f.severity === 'high')).map(forAgent);
       const result: FolderResult = {
         ranAt, ok: true, filesScanned: outcome.value.filesScanned, findingsTotal: findings.length,
         findings: sortFindings(findings).slice(0, MAX_STORED_FINDINGS), newCount: fresh.length,
+        seen: [...new Set(findings.map(findingHash))].slice(0, MAX_SEEN_KEYS),
       };
       state.results[path] = result;
       summary.folders.push({ path, ok: true, level: worstLevel(findings), counts: countBySeverity(findings), newSerious });
@@ -151,8 +174,9 @@ export function createApp(deps: Deps): App {
         const r = s.results[path];
         return {
           path,
+          // `seen` is for patrol diffs only; the page does not need it.
           result: r
-            ? { ...r, level: worstLevel(r.findings), counts: countBySeverity(r.findings) }
+            ? (({ seen: _seen, ...rest }) => ({ ...rest, level: worstLevel(r.findings), counts: countBySeverity(r.findings) }))(r)
             : null,
           vault: listVault(path),
         };

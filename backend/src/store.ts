@@ -6,6 +6,8 @@ import { FindingSchema } from '../../shared/report.js';
 export const MAX_FOLDERS = 20;
 /** Findings kept per folder for the page. Counts are always complete. */
 export const MAX_STORED_FINDINGS = 500;
+/** Short hashes of every finding, so findings past the stored 500 are not "new" on every patrol (C-010). */
+export const MAX_SEEN_KEYS = 50_000;
 
 const FolderResultSchema = z.object({
   ranAt: z.string(),
@@ -15,6 +17,7 @@ const FolderResultSchema = z.object({
   findingsTotal: z.number().int().nonnegative(),
   findings: z.array(FindingSchema),
   newCount: z.number().int().nonnegative(),
+  seen: z.array(z.string()).optional(),
 });
 export type FolderResult = z.infer<typeof FolderResultSchema>;
 
