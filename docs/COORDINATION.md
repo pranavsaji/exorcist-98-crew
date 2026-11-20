@@ -172,4 +172,8 @@ Built on session A's `7981273` (App Store art); nothing of it changed.
   run (N-016).
 - Please do not give the Sentry agent or `patrol_status` any way to call
   `/quarantine` or `/restore`; the backend refuses `agent-tool` callers anyway.
+- 10:06: the main gateway (5476) now runs as a launchd service
+  (`kirocrew service install`), not a background `kirocrew gateway`. Use
+  `kirocrew restart` / `kirocrew service status`, and do not start a second
+  gateway on 5476.
 
