@@ -83,3 +83,25 @@ agent answering in chat (needs a Kiro sign-in).
   (disabled); uninstall with `kirocrew app uninstall x98-sample-app` (N-010).
 - Ticked the Nov 18 line in `docs/PLAN.md`.
 
+
+## 2026-11-19 evening, session A (port 5476)
+
+Committed only my own hunks. Session B's uncommitted work was left as it is:
+`mcp/patrol_status.py`, `tests/mcp.test.ts`, the `agents/exorcist-sentry.json`
+change, `mcpServers` in `app.json` and the `patrol_status` asserts in
+`tests/manifest.test.ts`.
+
+- **Rug-pull watch built (C-009).** `shared/pins.ts`, `backend/src/pins.ts`,
+  `tests/pins.test.ts` (PBT-CRW-06). Seen in Crew 0.13.0 with a pin file
+  written by the Shield's own `saveState`.
+- **No more `npx` fallback for the scanner (C-008).** `@exorcist-98/cli` is
+  unpublished, so `npx -y` of it would run whoever claims the name. The skill
+  no longer recommends it either.
+- Screenshots and a 17-second clip in `docs/media/`, listed in `app.json`.
+- Plan ticks: Nov 26, Dec 1, Dec 2, and two of the bonus checklist lines.
+- **ID clash avoided:** my findings are N-013 and N-014, because your test
+  comment already uses N-011 for the MCP server.
+- **Heads-up:** my `kirocrew app update` on 5476 at about 20:15 copied the
+  working tree, so the main gateway may now be running your unfinished
+  `mcpServers` entry and the agent prompt that calls `patrol_status`. Run the
+  update again from your committed state when you are done.

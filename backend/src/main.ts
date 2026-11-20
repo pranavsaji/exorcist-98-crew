@@ -3,7 +3,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createServer as createHttpServer } from 'node:http';
 import { APP_NAME, createApp } from './server.js';
-import { cliScanner, resolveScannerCommand } from './scanner.js';
+import { cliScanner, missingScanner, resolveScannerCommand } from './scanner.js';
+import { withPinWatch } from './pins.js';
 import { fileStore } from './store.js';
 import { readSecret } from './secret.js';
 import { gatewayNotifier, noticeFor } from './notify.js';
@@ -25,7 +26,8 @@ const notifier = origin && secret ? gatewayNotifier(origin, APP_NAME, secret) : 
 
 const app = createApp({
   store: fileStore(dataDir),
-  scanner: cliScanner(command),
+  // The Exorcist 98 scan, plus the MCP rug-pull watch on each folder's Shield pin file.
+  scanner: withPinWatch(command ? cliScanner(command) : missingScanner),
   secret,
   onPatrol: async (summary) => {
     const notice = noticeFor(summary, APP_NAME);
@@ -44,7 +46,7 @@ server.listen(port, '127.0.0.1', () => {
   // Ids and settings only; never file contents.
   process.stderr.write(
     `exorcist-98-crew backend on 127.0.0.1:${port}; signed requests ${secret ? 'required' : 'not required (no app secret found)'}; ` +
-      `nightly patrol ${hour === null ? 'off' : `at ${hour}:00`}; notifications ${notifier ? 'on' : 'off'}; data in ${dataDir}\n`,
+      `scanner ${command ? 'set' : 'NOT set'}; nightly patrol ${hour === null ? 'off' : `at ${hour}:00`}; notifications ${notifier ? 'on' : 'off'}; data in ${dataDir}\n`,
   );
 });
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

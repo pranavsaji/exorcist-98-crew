@@ -53,10 +53,10 @@ Key facts from the Crew docs:
 ## 5. Milestones
 
 - [x] Nov 18: install Crew, run the sample app, confirm the manifest fields
-- [ ] Nov 26: Sentry agent + agent-hygiene skill working in Crew chat
-- [ ] Nov 29: nightly cron calling the main CLI; notifications on new findings
-- [ ] Dec 1: dashboard page with infection level per workspace
-- [ ] Dec 2: README with install steps, screenshots and a 20-second clip for the main video
+- [x] Nov 26: Sentry agent + agent-hygiene skill working in Crew chat
+- [ ] Nov 29: nightly cron calling the main CLI; notifications on new findings (built as a backend timer, since an agent cannot call the app's API; notifications seen in Crew; the 02:00 run has not been seen on a real clock yet)
+- [x] Dec 1: dashboard page with infection level per workspace
+- [x] Dec 2: README with install steps, screenshots and a 20-second clip for the main video (`docs/media/`, clip is 17 s)
 
 ## 6. Kiro usage for this repo
 
@@ -67,7 +67,7 @@ Key facts from the Crew docs:
 
 ## 7. Submission checklist for the bonus
 
-- [ ] Repo is public, created during the submission period, same GitHub account as the main repo
-- [ ] Apache-2.0 license visible in About
-- [ ] README explains install and what the app adds to Crew
+- [ ] Repo is public, created during the submission period, same GitHub account as the main repo (public and same account: checked; created 2026-11-15T07:18Z, check against the submission period)
+- [x] Apache-2.0 license visible in About
+- [x] README explains install and what the app adds to Crew
 - [ ] Link to this repo in the main Devpost submission under Best Kiro Crew App

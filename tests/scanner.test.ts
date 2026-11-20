@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { cliScanner, DEFAULT_PACKAGE, resolveScannerCommand } from '../backend/src/scanner.js';
+import { cliScanner, missingScanner, NO_SCANNER_ERROR, resolveScannerCommand } from '../backend/src/scanner.js';
 import { report } from './arb.js';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'x98-scan-'));
@@ -14,16 +14,18 @@ function fakeCli(body: string): string {
 }
 
 describe('scanner command', () => {
-  it('uses EXORCIST_CLI, then the config file, then the scoped npm package', () => {
+  it('uses EXORCIST_CLI, then the config file, and never falls back to an unpublished npm package', () => {
     const dir = tmp();
     const cfg = join(dir, 'config.json');
-    expect(resolveScannerCommand({}, cfg)).toEqual({ file: expect.stringMatching(/npx/), args: ['-y', DEFAULT_PACKAGE] });
-    expect(DEFAULT_PACKAGE).toBe('@exorcist-98/cli@0.1.0');
+    expect(resolveScannerCommand({}, cfg)).toBeNull();
     writeFileSync(cfg, JSON.stringify({ cliPath: '/opt/exorcist/index.mjs' }));
     expect(resolveScannerCommand({}, cfg)).toEqual({ file: process.execPath, args: ['/opt/exorcist/index.mjs'] });
-    expect(resolveScannerCommand({ EXORCIST_CLI: '/env/cli.mjs' }, cfg).args).toEqual(['/env/cli.mjs']);
+    expect(resolveScannerCommand({ EXORCIST_CLI: '/env/cli.mjs' }, cfg)?.args).toEqual(['/env/cli.mjs']);
     writeFileSync(cfg, '{broken');
-    expect(resolveScannerCommand({}, cfg).args).toEqual(['-y', DEFAULT_PACKAGE]);
+    expect(resolveScannerCommand({}, cfg)).toBeNull();
+  });
+  it('with no scanner set up, every folder is an error, never clean', async () => {
+    expect(await missingScanner('/any')).toEqual({ ok: false, error: NO_SCANNER_ERROR });
   });
 });
 
@@ -32,11 +34,11 @@ describe('scanner config in two places (Crew app data folder, then ~/.exorcist-9
     const a = join(tmp(), 'config.json');
     const b = join(tmp(), 'config.json');
     writeFileSync(b, JSON.stringify({ cliPath: '/user/cli.mjs' }));
-    expect(resolveScannerCommand({}, [a, b]).args).toEqual(['/user/cli.mjs']);
+    expect(resolveScannerCommand({}, [a, b])?.args).toEqual(['/user/cli.mjs']);
     writeFileSync(a, '{broken');
-    expect(resolveScannerCommand({}, [a, b]).args).toEqual(['/user/cli.mjs']);
+    expect(resolveScannerCommand({}, [a, b])?.args).toEqual(['/user/cli.mjs']);
     writeFileSync(a, JSON.stringify({ cliPath: '/crew/cli.mjs' }));
-    expect(resolveScannerCommand({}, [a, b]).args).toEqual(['/crew/cli.mjs']);
+    expect(resolveScannerCommand({}, [a, b])?.args).toEqual(['/crew/cli.mjs']);
   });
 });
 

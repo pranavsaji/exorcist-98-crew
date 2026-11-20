@@ -8,7 +8,7 @@ var __export = (target, all) => {
 // backend/src/main.ts
 import { existsSync as existsSync3 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join3 } from "node:path";
+import { join as join4 } from "node:path";
 import { createServer as createHttpServer } from "node:http";
 
 // backend/src/server.ts
@@ -4368,7 +4368,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync as readFileSync2 } from "node:fs";
 var SCAN_TIMEOUT_MS = 12e4;
 var SCAN_MAX_OUTPUT = 20 * 1024 * 1024;
-var DEFAULT_PACKAGE = "@exorcist-98/cli@0.1.0";
+var NO_SCANNER_ERROR = `No Exorcist 98 scanner is set up. Set EXORCIST_CLI, or "cliPath" in the app's data/config.json, to the CLI's index.mjs.`;
 var ConfigSchema = external_exports.object({ cliPath: external_exports.string().min(1).optional() }).passthrough();
 function resolveScannerCommand(env2, configFiles) {
   let cliPath = env2["EXORCIST_CLI"];
@@ -4380,9 +4380,9 @@ function resolveScannerCommand(env2, configFiles) {
     } catch {
     }
   }
-  if (cliPath) return { file: process.execPath, args: [cliPath] };
-  return { file: process.platform === "win32" ? "npx.cmd" : "npx", args: ["-y", DEFAULT_PACKAGE] };
+  return cliPath ? { file: process.execPath, args: [cliPath] } : null;
 }
+var missingScanner = async () => ({ ok: false, error: NO_SCANNER_ERROR });
 function cliScanner(cmd, timeoutMs = SCAN_TIMEOUT_MS) {
   return (folder) => new Promise((resolvePromise) => {
     execFile(
@@ -4404,19 +4404,126 @@ function firstLine(s) {
   return s.split("\n").map((l) => l.trim()).find((l) => l.length > 0)?.slice(0, 300) ?? "";
 }
 
-// backend/src/secret.ts
-import { existsSync as existsSync2, readFileSync as readFileSync3 } from "node:fs";
-import { homedir } from "node:os";
+// backend/src/pins.ts
+import { lstatSync, readFileSync as readFileSync3 } from "node:fs";
 import { join as join2 } from "node:path";
+
+// shared/pins.ts
+var PIN_FILE = ".exorcist/pins.json";
+var MAX_PIN_FILE_BYTES = 5 * 1024 * 1024;
+var MAX_SPAN = 400;
+var Sha256 = external_exports.string().regex(/^[0-9a-f]{64}$/);
+var PendingSchema = external_exports.object({ hash: Sha256, oldHash: Sha256, oldDescription: external_exports.string(), newDescription: external_exports.string(), seenAt: external_exports.string() }).passthrough();
+var ServerSchema = external_exports.object({ tools: external_exports.record(external_exports.unknown()).default({}), pending: external_exports.record(PendingSchema).default({}) }).passthrough();
+var PinFileSchema = external_exports.object({ version: external_exports.literal(1), servers: external_exports.record(ServerSchema).default({}) }).passthrough();
+var RUG_PULL_RULE = "EX-006";
+var PIN_FILE_RULE = "X98-PIN";
+var clip = (s) => s.length > MAX_SPAN ? `${s.slice(0, MAX_SPAN)}\u2026` : s;
+function lineOf(text, key, from = 0) {
+  const i = text.indexOf(JSON.stringify(key), from);
+  if (i < 0) return { line: 1, index: from };
+  let line = 1;
+  for (let k = 0; k < i; k++) if (text.charCodeAt(k) === 10) line++;
+  return { line, index: i };
+}
+function pinFindings(text) {
+  if (text === null) return [];
+  const unreadable = (why) => [{
+    ruleId: PIN_FILE_RULE,
+    title: "Shield pin file is unreadable",
+    severity: "high",
+    file: PIN_FILE,
+    line: 1,
+    col: 1,
+    span: why,
+    fix: "The Exorcist 98 Shield refuses to run with a broken pin file, so its MCP rug-pull protection is off for this folder. Restore the file from a backup, or delete it so the Shield pins every tool again on its next start."
+  }];
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return unreadable("The file is not valid JSON.");
+  }
+  const parsed = PinFileSchema.safeParse(json);
+  if (!parsed.success) return unreadable("The file is not in the Shield pin format (version 1).");
+  const out = [];
+  for (const [server2, s] of Object.entries(parsed.data.servers)) {
+    const serverAt = lineOf(text, server2);
+    const pendingAt = lineOf(text, "pending", serverAt.index);
+    for (const [tool, p] of Object.entries(s.pending)) {
+      const at = lineOf(text, tool, pendingAt.index);
+      out.push({
+        ruleId: RUG_PULL_RULE,
+        // Fixed text: tool and server names come from the MCP server, and titles
+        // reach the agent and Crew notifications.
+        title: "MCP tool changed after it was pinned",
+        severity: "critical",
+        file: PIN_FILE,
+        line: at.line,
+        col: 1,
+        // Names and the new description are attacker-controlled: shown on the
+        // page as plain text only, never sent to the agent or in a notification.
+        span: clip(`${server2} / ${tool}: ${p.newDescription}`),
+        fix: "The Shield is hiding this tool until you decide. Compare the old and new description, and approve only if you expected the change, with `exorcist approve tool <server> <tool> --dir <this folder>/.exorcist`. Otherwise remove or downgrade the MCP server."
+      });
+    }
+  }
+  return out;
+}
+
+// backend/src/pins.ts
+function readPinFile(folder) {
+  const path = join2(folder, PIN_FILE);
+  let st;
+  try {
+    st = lstatSync(path);
+  } catch {
+    return [];
+  }
+  const refuse = (why) => [{
+    ruleId: PIN_FILE_RULE,
+    title: "Shield pin file is unreadable",
+    severity: "high",
+    file: PIN_FILE,
+    line: 1,
+    col: 1,
+    span: why,
+    fix: "Replace it with the regular file the Exorcist 98 Shield writes, or delete it so the Shield pins every tool again on its next start."
+  }];
+  if (st.isSymbolicLink()) return refuse("The pin file is a symbolic link; it was not followed.");
+  if (!st.isFile()) return refuse("The pin file is not a regular file.");
+  if (st.size > MAX_PIN_FILE_BYTES) return refuse(`The pin file is larger than ${MAX_PIN_FILE_BYTES / 1024 / 1024} MB; it was not read.`);
+  let text;
+  try {
+    text = readFileSync3(path, "utf8");
+  } catch {
+    return refuse("The pin file could not be read.");
+  }
+  return pinFindings(text);
+}
+var isPinHashNoise = (f) => f.file === PIN_FILE && f.ruleId === "EX-003";
+function withPinWatch(scanner, readPins = readPinFile) {
+  return async (folder) => {
+    const outcome = await scanner(folder);
+    if (!outcome.ok) return outcome;
+    const findings = [...outcome.value.findings.filter((f) => !isPinHashNoise(f)), ...readPins(folder)];
+    return { ok: true, value: { ...outcome.value, findings } };
+  };
+}
+
+// backend/src/secret.ts
+import { existsSync as existsSync2, readFileSync as readFileSync4 } from "node:fs";
+import { homedir } from "node:os";
+import { join as join3 } from "node:path";
 function readSecret(env2, appName, home = homedir()) {
   for (const key of ["EXORCIST_CREW_SECRET", "KIROCREW_PROXY_SECRET"]) {
     const v = env2[key]?.trim();
     if (v) return v;
   }
-  const crewHome = env2["KIROCREW_HOME"] || join2(home, ".kiro", "crew");
-  const file = join2(crewHome, "apps", appName, ".app_secret");
+  const crewHome = env2["KIROCREW_HOME"] || join3(home, ".kiro", "crew");
+  const file = join3(crewHome, "apps", appName, ".app_secret");
   if (!existsSync2(file)) return null;
-  const s = readFileSync3(file, "utf8").trim();
+  const s = readFileSync4(file, "utf8").trim();
   return s.length > 0 ? s : null;
 }
 
@@ -4506,16 +4613,17 @@ function scheduleNightly(run, hour2, now = () => /* @__PURE__ */ new Date(), tim
 
 // backend/src/main.ts
 var env = process.env;
-var crewData = env["KIROCREW_HOME"] ? join3(env["KIROCREW_HOME"], "apps", APP_NAME, "data") : null;
-var dataDir = env["EXORCIST_CREW_DATA"] ?? (crewData && existsSync3(crewData) ? crewData : join3(homedir2(), ".exorcist-98-crew"));
+var crewData = env["KIROCREW_HOME"] ? join4(env["KIROCREW_HOME"], "apps", APP_NAME, "data") : null;
+var dataDir = env["EXORCIST_CREW_DATA"] ?? (crewData && existsSync3(crewData) ? crewData : join4(homedir2(), ".exorcist-98-crew"));
 var port = Number(env["PORT"] ?? 4598);
 var secret = readSecret(env, APP_NAME);
-var command = resolveScannerCommand(env, [join3(dataDir, "config.json"), join3(homedir2(), ".exorcist-98-crew", "config.json")]);
+var command = resolveScannerCommand(env, [join4(dataDir, "config.json"), join4(homedir2(), ".exorcist-98-crew", "config.json")]);
 var origin = env["KIROCREW_GATEWAY_ORIGIN"];
 var notifier = origin && secret ? gatewayNotifier(origin, APP_NAME, secret) : null;
 var app = createApp({
   store: fileStore(dataDir),
-  scanner: cliScanner(command),
+  // The Exorcist 98 scan, plus the MCP rug-pull watch on each folder's Shield pin file.
+  scanner: withPinWatch(command ? cliScanner(command) : missingScanner),
   secret,
   onPatrol: async (summary) => {
     const notice = noticeFor(summary, APP_NAME);
@@ -4530,7 +4638,7 @@ var hour = patrolHour(env["EXORCIST_PATROL_HOUR"]);
 var stopSchedule = hour === null ? () => void 0 : scheduleNightly(app.runPatrol, hour);
 server.listen(port, "127.0.0.1", () => {
   process.stderr.write(
-    `exorcist-98-crew backend on 127.0.0.1:${port}; signed requests ${secret ? "required" : "not required (no app secret found)"}; nightly patrol ${hour === null ? "off" : `at ${hour}:00`}; notifications ${notifier ? "on" : "off"}; data in ${dataDir}
+    `exorcist-98-crew backend on 127.0.0.1:${port}; signed requests ${secret ? "required" : "not required (no app secret found)"}; scanner ${command ? "set" : "NOT set"}; nightly patrol ${hour === null ? "off" : `at ${hour}:00`}; notifications ${notifier ? "on" : "off"}; data in ${dataDir}
 `
   );
 });

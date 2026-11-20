@@ -19,7 +19,21 @@ Companion to the Kiroween 2026 entry
 | **Nightly patrol** (02:00, in the backend) | Scans every watched folder and sends a Crew notification for new serious findings or failed scans. `EXORCIST_PATROL_HOUR` changes the hour; `off` disables it. |
 | **Exorcist Sentry agent** (cron `nightly-patrol`, paused) | Summarises the latest patrol on request. It never starts a scan and never sees the scanned text (see below). The cron is paused because in Crew 0.12.2 an agent has no token for the app's API. |
 | **Agent-hygiene skill**                           | Safe habits for any Crew agent that reads repos or uses MCP servers.                                                                                                                        |
-| **Backend**                                       | Keeps the folder list, runs the scanner, diffs against the last patrol.                                                                                                                     |
+| **MCP rug-pull watch** (every patrol) | Reads each folder's Exorcist 98 Shield pin file (`.exorcist/pins.json`) and reports every MCP tool the Shield is holding back because its description changed after it was pinned (critical, EX-006). Read-only: approving stays with `exorcist approve tool`. |
+| **Backend**                                       | Keeps the folder list, runs the scanner and the rug-pull watch, diffs against the last patrol.                                                                                                                     |
+
+### Screenshots
+
+The page inside a signed-in Crew 0.13.0 dashboard, patrolling the Haunted Repo
+from the main repo:
+
+![Watched folders with their infection level](docs/media/page-overview.png)
+
+A changed MCP tool reported from the Shield's pin file:
+
+![Rug-pull finding with quoted text and fix](docs/media/rug-pull-finding.png)
+
+A 17-second clip of a patrol: [`docs/media/patrol-clip.mp4`](docs/media/patrol-clip.mp4).
 
 ### Why the agent never sees the scanned text
 
@@ -54,8 +68,9 @@ no shell and a 120-second limit. In order of preference:
    `pnpm --filter @exorcist-98/cli build` in the main repo).
 2. `cliPath` in a `config.json`, first in Crew's app data folder
    (`~/.kiro/crew/apps/exorcist-98-crew/data/`), then in `~/.exorcist-98-crew/`.
-3. `npx -y @exorcist-98/cli@0.1.0`. **Not published to npm yet**, so for now
-   use 1 or 2.
+3. Nothing else. There is deliberately no `npx` fallback: `@exorcist-98/cli` is
+   not published, and `npx -y` of an unpublished name runs whoever claims it.
+   Without 1 or 2, each folder's patrol reports "No Exorcist 98 scanner is set up".
 
 The scanner is never chosen through the app's HTTP API.
 
@@ -85,7 +100,7 @@ backend with `X-Crew-Proxy`. It is a test harness, not Crew.
 Run inside Kiro Crew 0.12.2 and 0.13.0 on macOS (2026-11-18 and 19): the app installs,
 enables, patrols the Haunted Repo through the gateway proxy, shows its page in
 the signed-in dashboard, and sends a Crew notification for new serious
-findings. 103 tests pass, and the page passes a 16-step Chrome run with 0 axe
+findings. 121 tests pass, and the page passes a 16-step Chrome run with 0 axe
 violations through the stand-in gateway.
 
 With a Kiro sign-in, the Sentry agent answers in chat and the agent cron runs.

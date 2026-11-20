@@ -90,6 +90,8 @@ describe('REQ-05 agent and skill', () => {
   it('never points at the unscoped npm name, which belongs to another package', () => {
     for (const file of ['skills/agent-hygiene/SKILL.md', 'agents/exorcist-sentry.json', 'README.md', 'backend/src/scanner.ts']) {
       expect(readFileSync(join(ROOT, file), 'utf8')).not.toMatch(/npx (-y )?exorcist(?![-\w/])/);
+      // C-008: @exorcist-98/cli is not published, so recommending npx of it would run whoever claims the name.
+      if (file !== 'README.md' && file !== 'backend/src/scanner.ts') expect(readFileSync(join(ROOT, file), 'utf8')).not.toMatch(/npx[^`\n]*@exorcist-98/);
     }
   });
 });

@@ -15,7 +15,8 @@
     "Nightly patrol of the folders you choose, with new serious findings reported by the Sentry agent",
     "Dashboard page: infection level per folder, every finding down to the file, line and quoted text",
     "The agent never sees scanned text, only file, line and rule, so a poisoned file cannot steer it",
-    "Agent-hygiene skill: safe habits for any Crew agent that reads repos or uses MCP servers"
+    "Agent-hygiene skill: safe habits for any Crew agent that reads repos or uses MCP servers",
+    "MCP rug-pull watch: reports tools the Exorcist 98 Shield is holding back because they changed after approval"
   ],
   "agents": [
     "agents/exorcist-sentry.json"
@@ -60,5 +61,10 @@
         "defaultPriority": "critical"
       }
     ]
-  }
+  },
+  "screenshots": [
+    "docs/media/page-overview.png",
+    "docs/media/rug-pull-finding.png",
+    "docs/media/finding-detail.png"
+  ]
 }

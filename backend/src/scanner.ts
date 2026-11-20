@@ -8,7 +8,13 @@ import type { Finding, Result } from '../../shared/report.js';
 
 export const SCAN_TIMEOUT_MS = 120_000;
 export const SCAN_MAX_OUTPUT = 20 * 1024 * 1024;
-export const DEFAULT_PACKAGE = '@exorcist-98/cli@0.1.0';
+/**
+ * There is no npm fallback. `@exorcist-98/cli` is not published, so
+ * `npx -y @exorcist-98/cli@0.1.0` would run whoever claims that name first.
+ * Add one back only after the package is published by its owner.
+ */
+export const NO_SCANNER_ERROR =
+  'No Exorcist 98 scanner is set up. Set EXORCIST_CLI, or "cliPath" in the app\'s data/config.json, to the CLI\'s index.mjs.';
 
 /** How to start the scanner: a program and the arguments that come before `scan`. */
 export type ScannerCommand = { file: string; args: string[] };
@@ -20,9 +26,9 @@ const ConfigSchema = z.object({ cliPath: z.string().min(1).optional() }).passthr
 
 /**
  * The scanner command comes from `EXORCIST_CLI`, then `cliPath` in the config
- * file, then the published npm package. It is never taken from a request.
+ * file, or null when neither is set. It is never taken from a request.
  */
-export function resolveScannerCommand(env: NodeJS.ProcessEnv, configFiles: string | readonly string[]): ScannerCommand {
+export function resolveScannerCommand(env: NodeJS.ProcessEnv, configFiles: string | readonly string[]): ScannerCommand | null {
   let cliPath = env['EXORCIST_CLI'];
   // The first config file that names a cliPath wins.
   for (const configFile of typeof configFiles === 'string' ? [configFiles] : configFiles) {
@@ -34,9 +40,11 @@ export function resolveScannerCommand(env: NodeJS.ProcessEnv, configFiles: strin
       // A broken config file is skipped.
     }
   }
-  if (cliPath) return { file: process.execPath, args: [cliPath] };
-  return { file: process.platform === 'win32' ? 'npx.cmd' : 'npx', args: ['-y', DEFAULT_PACKAGE] };
+  return cliPath ? { file: process.execPath, args: [cliPath] } : null;
 }
+
+/** A scanner that reports every folder as failed (never clean) because none is set up. */
+export const missingScanner: Scanner = async () => ({ ok: false, error: NO_SCANNER_ERROR });
 
 export const defaultConfigFile = (env: NodeJS.ProcessEnv): string =>
   join(env['EXORCIST_CREW_DATA'] ?? join(homedir(), '.exorcist-98-crew'), 'config.json');
