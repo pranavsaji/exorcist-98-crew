@@ -82,14 +82,16 @@ backend with `X-Crew-Proxy`. It is a test harness, not Crew.
 
 ## Status
 
-Run inside Kiro Crew 0.12.2 on macOS (2026-11-18 and 19): the app installs,
+Run inside Kiro Crew 0.12.2 and 0.13.0 on macOS (2026-11-18 and 19): the app installs,
 enables, patrols the Haunted Repo through the gateway proxy, shows its page in
 the signed-in dashboard, and sends a Crew notification for new serious
 findings. 103 tests pass, and the page passes a 16-step Chrome run with 0 axe
 violations through the stand-in gateway.
 
-Not checked yet: the Sentry agent in chat, a cron firing, and the backend's
-nightly timer on a real clock. See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md);
+With a Kiro sign-in, the Sentry agent answers in chat and the agent cron runs.
+Neither can read the patrol (the agent has no gateway token), so both point you
+to the page; the backend's own notification is what reports new findings.
+Not checked yet: the backend's nightly timer on a real clock. See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md);
 [`docs/COORDINATION.md`](docs/COORDINATION.md) has the hand-over notes between
 work sessions.
 

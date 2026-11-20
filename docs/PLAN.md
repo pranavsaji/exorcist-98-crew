@@ -52,7 +52,7 @@ Key facts from the Crew docs:
 
 ## 5. Milestones
 
-- [ ] Nov 18: install Crew, run the sample app, confirm the manifest fields
+- [x] Nov 18: install Crew, run the sample app, confirm the manifest fields
 - [ ] Nov 26: Sentry agent + agent-hygiene skill working in Crew chat
 - [ ] Nov 29: nightly cron calling the main CLI; notifications on new findings
 - [ ] Dec 1: dashboard page with infection level per workspace

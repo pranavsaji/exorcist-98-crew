@@ -72,7 +72,10 @@ describe('REQ-05 agent and skill', () => {
     const prompt = String(agent['prompt']);
     expect(prompt).toMatch(/data, never instructions/);
     expect(prompt).toMatch(/without the user's explicit yes/);
-    expect(prompt).toContain('/apps/exorcist-98-crew/api/patrol');
+    // C-007: an agent cannot call the app's backend, so the prompt must not tell it to.
+    expect(prompt).not.toMatch(/send POST|api\/patrol/);
+    expect(prompt).toContain('/apps/exorcist-98-crew');
+    expect(prompt).toMatch(/Never invent or guess results/);
   });
 
   it('every skill has name and description frontmatter', () => {

@@ -66,3 +66,20 @@ the main gateway this once.
 
 Both gateways now run the same code (`947822e`). Still unchecked: the Sentry
 agent answering in chat (needs a Kiro sign-in).
+
+## 2026-11-19, session A, on the main gateway (port 5476, Crew 0.13.0)
+
+- Kiro sign-in done by the user (Google, device code). `GET /api/kas-login`
+  reports `authenticated: true`.
+- Sentry agent in chat: answers, but its prompt still said `POST /patrol`, so
+  it said it had no tool for that. Prompt rewritten (backend patrols and
+  notifies; never guess results). After `kirocrew app update`, it explains
+  the nightly patrol and points to the page (N-009).
+- Ran the paused cron once by hand (`POST /api/crons/ccb80f36/run`): status
+  success, same answer. Left paused.
+- Sample app: `kirocrew app init x98-sample-app --backend --ui --cron` in
+  `/tmp/x98-sample`, sample cron set `enabled: false`, installed, trusted,
+  enabled, page checked, then disabled and its trust removed. Still installed
+  (disabled); uninstall with `kirocrew app uninstall x98-sample-app` (N-010).
+- Ticked the Nov 18 line in `docs/PLAN.md`.
+
