@@ -145,3 +145,16 @@ Built on session A's `7981273` (App Store art); nothing of it changed.
   triggered cron run succeeded unattended with correct results and no quoted
   text. The cron is now **enabled at 02:15** (manifest), job `1e89f00f`.
 - Not changed: `x98-sample-app` (still installed, disabled).
+
+## 2026-11-19 22:05, session A
+
+- Hook C-017 verified: an agent edit of `app.json` in the IDE triggered
+  `validate-app-json` (vitest results rewritten 8 s later with only
+  `tests/manifest.test.ts`). The edit was reverted at once.
+- Timer checked once more outside Crew (N-015): 22:00:00.126, 40 findings. With
+  your N-007 this ticks Nov 29 in the plan.
+- Submission-period line ticked: repo created 2026-11-15, period is
+  2026-10-30 to 2026-12-04 (Kiroween 2026 rules).
+- Uninstalled `x98-sample-app` from 5476 with `--purge-data`; trust list is
+  `["exorcist-98-crew","personal-shopper"]`.
+

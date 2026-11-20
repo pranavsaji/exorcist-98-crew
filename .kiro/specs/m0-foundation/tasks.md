@@ -11,5 +11,5 @@
 ## Results
 - 83 tests in 7 files pass (was 59 in 6): 12 more broken-variant cases, three properties, 9 foundation checks.
 - A clean copy passes build and typecheck, and its bundles are identical to the committed ones. In the clean copy 1 test is skipped (the real-CLI scan; the Haunted Repo is not in that copy).
-- REQ-01 to REQ-03, REQ-05 and REQ-06.1-2 are met. Open: the hook has not been seen firing on an IDE save (C-017, REQ-04), and the `KIRO_LOG.md` entry for the main repo (REQ-06.3) is not written.
+- All of REQ-01 to REQ-06 are met. REQ-04 (hook) was seen firing on an agent save in the IDE (C-017); REQ-06.3 (`KIRO_LOG.md`) is written in the main repo (`45da2f0`).
 - Installing in Crew found four defects the unit tests could not: missing `permissions.cron`, the wrong proxy header name, a signed `/health`, and an untrusted-app block (N-001 to N-004).
