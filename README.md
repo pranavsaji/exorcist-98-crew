@@ -17,7 +17,7 @@ Companion to the Kiroween 2026 entry
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Dashboard page** (`/apps/exorcist-98-crew`)     | Add or remove folders, run a patrol, see an infection level per folder (text label plus shape, never colour alone), open any finding to see where it is, the quoted text and how to fix it. |
 | **Nightly patrol** (02:00, in the backend) | Scans every watched folder and sends a Crew notification for new serious findings or failed scans. `EXORCIST_PATROL_HOUR` changes the hour; `off` disables it. |
-| **Exorcist Sentry agent** (cron `nightly-patrol`, paused) | Summarises the latest patrol on request. It never starts a scan and never sees the scanned text (see below). The cron is paused because in Crew 0.12.2 an agent has no token for the app's API. |
+| **Exorcist Sentry agent** (cron `nightly-patrol`, 02:15) | Reports the latest patrol through its one read-only tool, `patrol_status`, in chat and in a nightly 02:15 summary after the 02:00 patrol. It never starts a scan, never sees the scanned text and never moves files (see below). |
 | **Agent-hygiene skill**                           | Safe habits for any Crew agent that reads repos or uses MCP servers.                                                                                                                        |
 | **MCP rug-pull watch** (every patrol) | Reads each folder's Exorcist 98 Shield pin file (`.exorcist/pins.json`) and reports every MCP tool the Shield is holding back because its description changed after it was pinned (critical, EX-006). Read-only: approving stays with `exorcist approve tool`. |
 | **Quarantine** (on the page, asks first) | "Move file to vault..." on a finding moves that file into `.exorcist/vault` inside the folder, through the Exorcist 98 Quarantine Vault (exact copy and sha256). "Restore..." puts back the exact bytes. Only you, signed in to the dashboard, can do it: the gateway signs who sent each request, and agents, schedules, MCP tools and other apps are refused. Only files named by the last patrol can be moved; never symlinks or `.exorcist` files. |
@@ -91,7 +91,7 @@ by `EXORCIST_CREW_DATA`. It holds the folder list and the last patrol's findings
 ```sh
 npm install
 npm run build      # ui/dist/index.mjs and backend/dist/server.mjs (both committed)
-npm test           # 140 unit and property tests
+npm test           # 143 unit and property tests
 npm run typecheck
 npm run e2e        # Chrome + axe through a stand-in gateway (scripts/preview.mjs)
 ```
@@ -105,13 +105,12 @@ backend with `X-Crew-Proxy`. It is a test harness, not Crew.
 Run inside Kiro Crew 0.12.2 and 0.13.0 on macOS (2026-11-18 and 19): the app installs,
 enables, patrols the Haunted Repo through the gateway proxy, shows its page in
 the signed-in dashboard, and sends a Crew notification for new serious
-findings. 140 tests pass, and the page passes a 20-step Chrome run with 0 axe
+findings. 143 tests pass, and the page passes a 20-step Chrome run with 0 axe
 violations through the stand-in gateway.
 
-With a Kiro sign-in, the Sentry agent answers in chat and the agent cron runs.
-Neither can read the patrol (the agent has no gateway token), so both point you
-to the page; the backend's own notification is what reports new findings.
-Not checked yet: the backend's nightly timer on a real clock. See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md);
+With a Kiro sign-in, the Sentry agent answers in chat and its 02:15 cron runs
+unattended, both reading results through `patrol_status`. The backend's 02:00
+patrol has run on a real clock in Crew, with its notification. See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md);
 [`docs/COORDINATION.md`](docs/COORDINATION.md) has the hand-over notes between
 work sessions.
 
